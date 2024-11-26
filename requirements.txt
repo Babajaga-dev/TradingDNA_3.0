@@ -1,0 +1,25 @@
+# TradingDNA CLI Framework Dependencies
+
+# UI e Interattività
+rich>=13.0.0
+prompt-toolkit>=3.0.36
+click>=8.1.3
+colorama>=0.4.6
+
+# Gestione Configurazione
+pyyaml>=6.0.1
+
+# Utility
+python-dateutil>=2.8.2
+typing-extensions>=4.9.0
+
+# Testing
+pytest>=8.0.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+
+# Sviluppo
+black>=24.1.0
+isort>=5.13.2
+flake8>=7.0.0
+mypy>=1.8.0

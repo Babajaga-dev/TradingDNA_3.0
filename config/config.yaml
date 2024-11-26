@@ -1,0 +1,36 @@
+# TradingDNA CLI Framework - Configurazione
+# ------------------------------------------
+
+# Configurazione sistema
+system:
+  log_level: "INFO"
+  log_format: "colored"
+  data_dir: "data"
+
+# Configurazione trading
+trading:
+  mode: "backtest"
+  symbols:
+    - "BTCUSDT"
+    - "ETHUSDT"
+    - "BNBUSDT"
+  timeframes:
+    - "1h"
+    - "4h"
+    - "1d"
+
+# Configurazione indicatori
+indicators:
+  enabled: true
+  cache_size: 1000
+
+# Configurazione sicurezza
+security:
+  enable_backup: true
+  backup_interval: 86400  # 24h in secondi
+
+# Configurazione exchange
+exchanges:
+  binance:
+    api_key: "your_api_key_here"
+    api_secret: "your_api_secret_here"

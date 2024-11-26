@@ -1,0 +1,30 @@
+-- Script di migrazione per creare la tabella market_data
+
+CREATE TABLE IF NOT EXISTS market_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exchange_id TEXT NOT NULL,
+    symbol_id TEXT NOT NULL,
+    timestamp DATETIME NOT NULL,
+    timeframe TEXT NOT NULL,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    volume REAL,
+    sma_20 REAL,
+    ema_50 REAL,
+    rsi_14 REAL,
+    macd REAL,
+    macd_signal REAL,
+    macd_hist REAL,
+    bb_upper REAL,
+    bb_middle REAL,
+    bb_lower REAL,
+    volatility REAL,
+    trend_strength REAL,
+    volume_ma_20 REAL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_valid BOOLEAN DEFAULT 1,
+    validation_errors TEXT
+);
