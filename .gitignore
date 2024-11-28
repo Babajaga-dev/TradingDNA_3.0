@@ -2,8 +2,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
-data/
 logs/
+*.db*
+/data/gene_tests/
 
 # C extensions
 *.so
