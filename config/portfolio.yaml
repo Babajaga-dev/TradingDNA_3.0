@@ -5,6 +5,7 @@ portfolio:
   - ETHUSDT
   - BNBUSDT
   timeframes:
+  - 5m
   - 1h
   - 4h
-  - 1d
+  

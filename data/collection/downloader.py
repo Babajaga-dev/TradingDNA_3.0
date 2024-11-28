@@ -55,9 +55,16 @@ def convert_to_local_time(utc_timestamp: float) -> datetime:
     Returns:
         datetime: Data e ora in fuso orario locale
     """
+    # Crea un datetime UTC dal timestamp
     utc_dt = datetime.fromtimestamp(utc_timestamp / 1000, tz=pytz.UTC)
+    
+    # Converti in timezone locale (Europe/Rome)
     local_tz = pytz.timezone('Europe/Rome')
     local_dt = utc_dt.astimezone(local_tz)
+    
+    # Aggiungi un'ora per correggere la differenza
+    local_dt = local_dt + timedelta(hours=1)
+    
     return local_dt
 
 @dataclass
