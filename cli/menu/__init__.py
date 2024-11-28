@@ -13,6 +13,7 @@ from .menu_items import (
     download_historical_data,
     view_historical_data,
     config_menu_items,
+    gene_menu_items,  # Aggiungo l'import di gene_menu_items
     MenuItem,
     CommandMenuItem,
     SubMenuItem,
@@ -95,11 +96,12 @@ __all__ = [
     'download_historical_data',
     'view_historical_data',
     'config_menu_items',
+    'gene_menu_items',  # Aggiungo gene_menu_items a __all__
     'MenuItem',
     'CommandMenuItem',
     'SubMenuItem',
     'SeparatorMenuItem',
     'MenuContext',
     'create_menu',
-    'create_menu_from_dict'  # Aggiungo create_menu_from_dict a __all__
+    'create_menu_from_dict'
 ]

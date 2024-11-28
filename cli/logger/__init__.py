@@ -7,7 +7,12 @@ Fornisce formattatori personalizzati e gestione centralizzata dei log.
 
 from typing import Optional, Any, Union
 
-from .log_manager import LogManager, get_log_manager
+from .log_manager import (
+    LogManager, 
+    get_log_manager,
+    setup_logging,
+    get_logger
+)
 from .formatters import (
     ColoredFormatter,
     JsonFormatter,
@@ -67,15 +72,3 @@ def setup_logging(
         handler.setFormatter(formatter)
         
     return log_manager
-
-def get_logger(name: str) -> Any:
-    """
-    Ottiene un logger configurato per il modulo specificato.
-    
-    Args:
-        name: Nome del logger/modulo
-        
-    Returns:
-        Logger configurato
-    """
-    return get_log_manager().get_logger(name)

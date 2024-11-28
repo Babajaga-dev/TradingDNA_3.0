@@ -227,3 +227,15 @@ def setup_logging(config_path: str) -> LogManager:
     manager = get_log_manager()
     manager.configure_from_yaml(config_path)
     return manager
+
+def get_logger(name: str) -> 'logging.Logger':
+    """
+    Funzione helper per ottenere un logger configurato.
+    
+    Args:
+        name: Nome del logger/modulo
+        
+    Returns:
+        Logger configurato
+    """
+    return get_log_manager().get_logger(name)

@@ -255,7 +255,8 @@ class DownloadManager:
         )
         
         # Esegue download
-        async with get_session() as session:
+        session = get_session()
+        try:
             downloader = DataDownloader(session, download_config)
             
             with Live(progress, refresh_per_second=10):
@@ -280,6 +281,8 @@ class DownloadManager:
                 finally:
                     self.progress = None
                     self.task_id = None
+        finally:
+            session.close()
         
     def _show_stats(self, stats: DownloadStats) -> None:
         """

@@ -1,0 +1,51 @@
+gene:
+  base:
+    crossover_rate: 0.7
+    mutation_rate: 0.1
+    test_period_days: 30
+    weight: 1.0
+  bollinger:
+    constraints:
+      period:
+        max: 50
+        min: 5
+      std_dev:
+        max: 4
+        min: 1
+      touch_percentage:
+        max: 1.0
+        min: 0.1
+    default:
+      period: 20
+      std_dev: 2
+      touch_percentage: 0.5
+  moving_average:
+    constraints:
+      distance:
+        max: 0.1
+        min: 0.01
+      period:
+        max: 200
+        min: 5
+      types:
+      - SMA
+      - EMA
+    default:
+      distance: 0.02
+      period: 20
+      type: SMA
+  rsi:
+    constraints:
+      overbought:
+        max: 90
+        min: 50
+      oversold:
+        max: 50
+        min: 10
+      period:
+        max: 50
+        min: 2
+    default:
+      overbought: 50
+      oversold: 10
+      period: 10

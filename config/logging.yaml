@@ -47,6 +47,11 @@ logging:
       level: ERROR
       handlers: [console, file]
       propagate: false
+
+    cli.menu.gene_manager:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
   
   root:
     level: ERROR

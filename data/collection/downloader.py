@@ -15,11 +15,9 @@ import pytz
 from dataclasses import dataclass
 import time
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy.orm import Session
+from sqlalchemy import select, update, and_, insert
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
-from sqlalchemy import update, and_, insert
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..database.models import (
@@ -113,7 +111,7 @@ class DownloadStats:
 class DataDownloader:
     """Downloader dati da exchange."""
     
-    def __init__(self, session: AsyncSession, config: DownloadConfig):
+    def __init__(self, session: Session, config: DownloadConfig):
         self.session = session
         self.config = config
         self.logger = logging.getLogger(__name__)
@@ -166,7 +164,7 @@ class DataDownloader:
             self.logger.error(f"Errore download batch {symbol} {timeframe}: {str(e)}")
             return []
 
-    async def _validate_candles(
+    def _validate_candles(
         self,
         candles: List[List[float]],
         exchange_id: int,
@@ -218,29 +216,27 @@ class DataDownloader:
         except (IndexError, TypeError):
             return False
 
-    async def _get_or_create_exchange(self, session: AsyncSession, exchange_id: str) -> Exchange:
+    def _get_or_create_exchange(self, exchange_id: str) -> Exchange:
         """Ottiene o crea un exchange."""
         stmt = select(Exchange).where(Exchange.name == exchange_id)
-        result = await session.execute(stmt)
-        exchange_obj = result.scalar_one_or_none()
+        exchange_obj = self.session.execute(stmt).scalar_one_or_none()
         
         if not exchange_obj:
             exchange_obj = Exchange(name=exchange_id)
-            session.add(exchange_obj)
-            await session.flush()
-            await session.refresh(exchange_obj)
-            await session.commit()
+            self.session.add(exchange_obj)
+            self.session.flush()
+            self.session.refresh(exchange_obj)
+            self.session.commit()
         
         return exchange_obj
 
-    async def _get_or_create_symbol(self, session: AsyncSession, exchange_id: int, symbol: str) -> Symbol:
+    def _get_or_create_symbol(self, exchange_id: int, symbol: str) -> Symbol:
         """Ottiene o crea un simbolo."""
         stmt = select(Symbol).where(
             Symbol.exchange_id == exchange_id,
             Symbol.name == symbol
         )
-        result = await session.execute(stmt)
-        symbol_obj = result.scalar_one_or_none()
+        symbol_obj = self.session.execute(stmt).scalar_one_or_none()
         
         if not symbol_obj:
             if symbol.endswith('USDT'):
@@ -262,15 +258,15 @@ class DataDownloader:
                 base_asset=base,
                 quote_asset=quote
             )
-            session.add(symbol_obj)
-            await session.flush()
-            await session.refresh(symbol_obj)
-            await session.commit()
+            self.session.add(symbol_obj)
+            self.session.flush()
+            self.session.refresh(symbol_obj)
+            self.session.commit()
         
         return symbol_obj
 
-    async def _save_market_data(self, session: AsyncSession, exchange_id: int, symbol_id: int,
-                              timeframe: str, candles: List[List[float]]):
+    def _save_market_data(self, exchange_id: int, symbol_id: int,
+                         timeframe: str, candles: List[List[float]]):
         """Salva i dati di mercato usando UPSERT."""
         try:
             for candle in candles:
@@ -300,13 +296,13 @@ class DataDownloader:
                     set_=data
                 )
                 
-                await session.execute(stmt)
+                self.session.execute(stmt)
             
-            await session.commit()
+            self.session.commit()
             
         except Exception as e:
             self.logger.error(f"Errore salvataggio dati: {str(e)}")
-            await session.rollback()
+            self.session.rollback()
             raise
 
     async def _process_symbol_timeframe(self, exchange_obj: Exchange, connector: BaseConnector,
@@ -315,82 +311,79 @@ class DataDownloader:
         try:
             self.logger.info(f"Download {symbol} {timeframe}")
             
-            async with get_session() as session:
-                symbol_obj = await self._get_or_create_symbol(session, exchange_obj.id, symbol)
-                
-                stmt = select(MarketData.timestamp).where(
-                    MarketData.exchange_id == exchange_obj.id,
-                    MarketData.symbol_id == symbol_obj.id,
-                    MarketData.timeframe == timeframe
-                ).order_by(MarketData.timestamp.desc()).limit(1)
-                
-                result = await session.execute(stmt)
-                last_date = result.scalar_one_or_none()
-                
-                start_date = self.config.start_date
-                if not start_date:
-                    if last_date and (datetime.utcnow() - last_date).days <= 7:
-                        start_date = last_date
-                    else:
-                        start_date = datetime.utcnow() - timedelta(days=365)
-                
-                end_date = self.config.end_date or datetime.utcnow()
-                
-                start_ts = int(start_date.timestamp() * 1000)
-                end_ts = int(end_date.timestamp() * 1000)
-                
-                batch_size = self.batch_sizes[timeframe]
-                
-                timeframe_ms = connector.parse_timeframe(timeframe)
-                total_candles = (end_ts - start_ts) // timeframe_ms
-                num_batches = (total_candles + batch_size - 1) // batch_size
-                
-                all_candles = []
-                for i in range(num_batches):
-                    batch_start = start_ts + (i * batch_size * timeframe_ms)
-                    batch_end = min(batch_start + (batch_size * timeframe_ms), end_ts)
-                    
-                    batch = await self._download_batch(
-                        connector,
-                        symbol,
-                        timeframe,
-                        batch_start,
-                        batch_end,
-                        batch_size
-                    )
-                    all_candles.extend(batch)
-                    
-                    if self.config.progress_callback:
-                        self.config.progress_callback(
-                            f"Download {symbol} {timeframe} batch {i+1}/{num_batches}",
-                            i+1,
-                            num_batches
-                        )
-                    
-                    await asyncio.sleep(0.5)
-                
-                total = len(all_candles)
-                valid = invalid = missing = 0
-                
-                if self.config.validate_data:
-                    batch, stats = await self._validate_candles(
-                        all_candles, exchange_obj.id, symbol, timeframe
-                    )
-                    valid, invalid, missing = stats
-                    all_candles = batch
+            symbol_obj = self._get_or_create_symbol(exchange_obj.id, symbol)
+            
+            stmt = select(MarketData.timestamp).where(
+                MarketData.exchange_id == exchange_obj.id,
+                MarketData.symbol_id == symbol_obj.id,
+                MarketData.timeframe == timeframe
+            ).order_by(MarketData.timestamp.desc()).limit(1)
+            
+            last_date = self.session.execute(stmt).scalar_one_or_none()
+            
+            start_date = self.config.start_date
+            if not start_date:
+                if last_date and (datetime.utcnow() - last_date).days <= 7:
+                    start_date = last_date
                 else:
-                    valid = total
+                    start_date = datetime.utcnow() - timedelta(days=365)
+            
+            end_date = self.config.end_date or datetime.utcnow()
+            
+            start_ts = int(start_date.timestamp() * 1000)
+            end_ts = int(end_date.timestamp() * 1000)
+            
+            batch_size = self.batch_sizes[timeframe]
+            
+            timeframe_ms = connector.parse_timeframe(timeframe)
+            total_candles = (end_ts - start_ts) // timeframe_ms
+            num_batches = (total_candles + batch_size - 1) // batch_size
+            
+            all_candles = []
+            for i in range(num_batches):
+                batch_start = start_ts + (i * batch_size * timeframe_ms)
+                batch_end = min(batch_start + (batch_size * timeframe_ms), end_ts)
                 
-                if all_candles:
-                    await self._save_market_data(
-                        session,
-                        exchange_obj.id,
-                        symbol_obj.id,
-                        timeframe,
-                        all_candles
+                batch = await self._download_batch(
+                    connector,
+                    symbol,
+                    timeframe,
+                    batch_start,
+                    batch_end,
+                    batch_size
+                )
+                all_candles.extend(batch)
+                
+                if self.config.progress_callback:
+                    self.config.progress_callback(
+                        f"Download {symbol} {timeframe} batch {i+1}/{num_batches}",
+                        i+1,
+                        num_batches
                     )
                 
-                return total, valid, invalid, missing
+                await asyncio.sleep(0.5)
+            
+            total = len(all_candles)
+            valid = invalid = missing = 0
+            
+            if self.config.validate_data:
+                batch, stats = self._validate_candles(
+                    all_candles, exchange_obj.id, symbol, timeframe
+                )
+                valid, invalid, missing = stats
+                all_candles = batch
+            else:
+                valid = total
+            
+            if all_candles:
+                self._save_market_data(
+                    exchange_obj.id,
+                    symbol_obj.id,
+                    timeframe,
+                    all_candles
+                )
+            
+            return total, valid, invalid, missing
             
         except Exception as e:
             self.logger.error(f"Errore download {symbol} {timeframe}: {str(e)}")
@@ -414,10 +407,8 @@ class DataDownloader:
             
             for exchange in self.config.exchanges:
                 exchange_id = exchange['id']
-                
-                async with get_session() as session:
-                    exchange_obj = await self._get_or_create_exchange(session, exchange_id)
-                    self._exchange_map[exchange_obj.id] = exchange_id
+                exchange_obj = self._get_or_create_exchange(exchange_id)
+                self._exchange_map[exchange_obj.id] = exchange_id
                 
                 for symbol in self.config.symbols:
                     for timeframe in self.config.timeframes:
@@ -445,8 +436,7 @@ class DataDownloader:
             
             if self.config.update_metrics:
                 self.logger.info("Aggiornamento metriche...")
-                async with get_session() as session:
-                    await self._update_metrics(session)
+                self._update_metrics()
             
             self.stats.complete()
             self.logger.info("Download completato.")
@@ -459,7 +449,7 @@ class DataDownloader:
             for connector in self.connectors.values():
                 await connector.close()
                 
-    async def _update_metrics(self, session: AsyncSession):
+    def _update_metrics(self):
         """Aggiorna metriche di performance e rischio."""
         try:
             stmt = select(MarketData).order_by(
@@ -468,8 +458,7 @@ class DataDownloader:
                 MarketData.timeframe,
                 MarketData.timestamp
             )
-            result = await session.execute(stmt)
-            market_data = result.scalars().all()
+            market_data = self.session.execute(stmt).scalars().all()
             
             groups: Dict[Tuple[int, int, str], List[MarketData]] = {}
             for data in market_data:
@@ -499,7 +488,7 @@ class DataDownloader:
                     end_time=data[-1].timestamp
                 )
                 perf.calculate_metrics(prices, volumes)
-                session.add(perf)
+                self.session.add(perf)
                 
                 risk = RiskMetrics(
                     exchange_id=exchange_id,
@@ -509,9 +498,9 @@ class DataDownloader:
                     end_time=data[-1].timestamp
                 )
                 risk.calculate_metrics(returns, market_returns, volumes[1:])
-                session.add(risk)
+                self.session.add(risk)
             
-            await session.commit()
+            self.session.commit()
                 
         except SQLAlchemyError as e:
             self.logger.error(f"Errore aggiornamento metriche: {str(e)}")

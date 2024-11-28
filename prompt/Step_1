@@ -1,0 +1,176 @@
+Fase 1: Struttura Base del DNA
+Implementiamo prima la struttura fondamentale del DNA trading, creando le classi base che rappresenteranno i geni e i cromosomi. Questo ci permetterà di avere subito un sistema testabile.
+
+Step 1.1: Classe Gene
+Il Gene rappresenta la più piccola unità decisionale. Implementiamo:
+
+Struttura base del gene con parametri principali (soglie, timeframe)
+Metodi di mutazione semplice
+Metodo di valutazione base su dati storici
+Test unitari per verificare il comportamento
+inoltre nel codice non devono esserci parametri hardcodadi, tutti i parametri vannno nel file gene.yaml in config e gestiti con il config manager
+I livelli di tracciamento devono essere gestiti per ogni file prodottto tramite il sistema centrale di logging
+file non superiore a 350 righe altrimenti dividerli
+
+Lista di geni da implementare in questo caso niente parametrihardcoded tutti nel file gene.yaml in config dove ci saranno quelli di default
+mentre ci sarà una copia nel database in maniera da poterli ottimizzare e variare a runtime, o banalmente modificarli da cli
+
+Geni di Analisi del Prezzo
+Questi geni interpretano i movimenti di prezzo puri:
+
+Gene RSI
+
+Funzione: Misura la forza relativa del prezzo
+Alleli:
+
+Periodo di calcolo
+Soglia ipercomprato
+Soglia ipervenduto
+
+Gene Moving Average
+
+Funzione: Identifica la direzione del trend
+Alleli:
+
+Tipo di media (SMA, EMA)
+Periodo della media
+Distanza per segnale
+
+Gene Bollinger Bands
+
+Funzione: Misura volatilità e livelli estremi
+Alleli:
+
+Periodo base
+Numero di deviazioni standard
+Percentuale di tocco banda
+
+Gene MACD
+
+Funzione: Identifica momentum e divergenze
+Alleli:
+
+Periodo breve
+Periodo lungo
+Periodo segnale
+
+
+Geni di Volume
+
+Gene Volume Base
+
+Funzione: Analizza forza del movimento
+Alleli:
+
+Periodo confronto
+Moltiplicatore volume normale
+Soglia esplosione volume
+
+Gene OBV (On Balance Volume)
+
+Funzione: Conferma trend con volume
+Alleli:
+
+Periodo di smoothing
+Soglia divergenza
+Peso del segnale
+
+
+Geni di Volatilità
+
+Gene ATR
+
+Funzione: Misura la volatilità per il sizing
+Alleli:
+
+Periodo calcolo
+Moltiplicatore per stops
+Peso nel sizing
+
+Gene Volatility Breakout
+
+Funzione: Identifica rotture di volatilità
+Alleli:
+
+Periodo quiete
+Moltiplicatore esplosione
+Tempo minimo quiete
+
+
+Geni di Pattern
+
+Gene Candlestick
+
+Funzione: Riconosce pattern candlestick
+Alleli:
+
+Tipi pattern da cercare
+Dimensione minima candele
+Peso del pattern
+
+Gene Support/Resistance
+
+Funzione: Identifica livelli chiave
+Alleli:
+
+Periodo di lookback
+Numero tocchi necessari
+Spessore del livello
+
+
+Gene Holding Period
+
+Funzione: Gestisce durata posizioni
+Alleli:
+
+Tempo minimo
+Tempo massimo
+Scala temporale
+
+
+Geni di Money Management
+
+Gene Position Size
+
+Funzione: Calcola dimensione posizione
+Alleli:
+
+Percentuale account
+Rischio per trade
+Leva massima
+
+Gene Stop Loss
+
+Funzione: Gestisce uscite di protezione
+Alleli:
+
+Tipo stop (fisso, ATR, pivots)
+Distanza
+Trailing attivazione
+
+Gene Take Profit
+
+Funzione: Gestisce target di profitto
+Alleli:
+
+Tipo target (R:R, livelli, ATR)
+Numero livelli
+Percentuale chiusura per livello
+
+Note Implementative
+Ogni gene dovrebbe avere:
+
+Una funzione di calcolo del proprio segnale
+Una funzione di mutazione degli alleli
+Una funzione di crossover con geni simili
+Un peso nel sistema decisionale
+Un sistema di validazione dei parametri
+
+Nella cli facciamo  un menu geni e un sotomenu con le seguenti funzioni
+
+Possibilità di testare un gene su un periodo storico specifico (definito in giorni da prendere nello storico partendo dalla data del dato storico più vecchio)
+Visualizzare i segnali generati su un grafico del prezzo
+Ottenere statistiche sui segnali (quanti, distribuzione temporale, precisione)
+Calcolare metriche di efficacia (percentuale successo, falsi segnali)
+Visualizzare e settare i parametri da DB.
+

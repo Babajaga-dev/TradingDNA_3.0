@@ -31,7 +31,8 @@ class ConfigLoader:
         "networks.yaml", 
         "portfolio.yaml",
         "logging.yaml",
-        "security.yaml"
+        "security.yaml",
+        "gene.yaml"  # Aggiunto il nuovo file di configurazione
     ]
     
     def __init__(self, config_dir: Optional[str] = None):
@@ -136,7 +137,7 @@ class ConfigLoader:
         Salva una sezione della configurazione nel file appropriato.
         
         Args:
-            section: Nome della sezione da salvare (system, networks, portfolio, logging, security)
+            section: Nome della sezione da salvare (system, networks, portfolio, logging, security, gene)
             
         Raises:
             ConfigError: Se ci sono errori nel salvataggio
@@ -146,7 +147,8 @@ class ConfigLoader:
             'networks': 'networks.yaml',
             'portfolio': 'portfolio.yaml',
             'logging': 'logging.yaml',
-            'security': 'security.yaml'
+            'security': 'security.yaml',
+            'gene': 'gene.yaml'  # Aggiunta la nuova sezione
         }
         
         if section not in section_mapping:
@@ -277,6 +279,16 @@ class ConfigLoader:
                 'security': {
                     'enable_backup': True,
                     'backup_interval': 86400
+                }
+            },
+            'gene.yaml': {
+                'gene': {
+                    'base': {
+                        'mutation_rate': 0.1,
+                        'crossover_rate': 0.7,
+                        'weight': 1.0,
+                        'test_period_days': 30
+                    }
                 }
             }
         }

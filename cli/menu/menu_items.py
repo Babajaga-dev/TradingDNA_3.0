@@ -26,6 +26,7 @@ from data.database.models import (
 )
 from cli.config import get_config_loader
 from .download_manager import DownloadManager
+from .gene_manager import GeneManager
 
 # Abilita il supporto per asyncio nidificato
 nest_asyncio.apply()
@@ -351,7 +352,7 @@ def reset_system():
         )
         
         # Inizializza il database con le nuove tabelle
-        from data.database.models import initialize_database
+        from data.database.models import initialize_database, initialize_gene_parameters
         initialize_database()
         
         # 6. Inserisci Binance con il nome corretto
@@ -387,7 +388,24 @@ def reset_system():
             
         print("Database inizializzato con exchange 'binance'")
         
-        # 7. Riconfigura il logging
+        # 7. Inizializza i parametri dei geni dai valori di default
+        print("Inizializzazione parametri dei geni...")
+        config = get_config_loader().config
+        initialize_gene_parameters(config)
+        print("Parametri dei geni inizializzati dai valori di default")
+        
+        # 8. Reset dei geni
+        print("Reset dei geni in corso...")
+        gene_manager = GeneManager()
+        gene_types = ['rsi', 'moving_average']  # Lista dei tipi di geni disponibili
+        for gene_type in gene_types:
+            try:
+                gene_manager.reset_gene_params(gene_type)
+                print(f"Gene {gene_type} resettato con successo")
+            except Exception as e:
+                print(f"Errore durante il reset del gene {gene_type}: {e}")
+        
+        # 9. Riconfigura il logging
         print("Riconfigurazione sistema di logging...")
         from cli.logger import setup_logging
         setup_logging("config/logging.yaml")
@@ -541,6 +559,13 @@ def view_historical_data():
         print(f"Si è verificato un errore: {str(e)}")
         return "Errore durante la visualizzazione dei dati"
 
+
+def genetic_optimization_placeholder(*args, **kwargs):
+    """Placeholder per l'ottimizzazione genetica."""
+    print("\n[In Sviluppo] Ottimizzazione genetica dei parametri")
+    input("\nPremi INVIO per continuare...")
+    return None
+
 # Definizione dei menu items
 config_menu_items = [
     create_command(
@@ -556,3 +581,100 @@ config_menu_items = [
     )
 ]
 
+# Istanza del gene manager
+gene_manager = GeneManager()
+
+# Menu items per i geni
+rsi_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('rsi'),
+        description="Testa il gene RSI su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('rsi'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('rsi'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('rsi'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+moving_average_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('moving_average'),
+        description="Testa il gene Moving Average su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('moving_average'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('moving_average'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('moving_average'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Sottomenu per ogni gene
+gene_menu_items = [
+    create_submenu(
+        name="RSI",
+        items=rsi_menu_items,
+        description="Relative Strength Index"
+    ),
+    create_submenu(
+        name="Moving Average",
+        items=moving_average_menu_items,
+        description="Moving Average"
+    ),
+    create_separator(),
+    create_command(
+        name="Ottimizzazione Genetica",
+        callback=genetic_optimization_placeholder,
+        description="Ottimizzazione genetica dei parametri"
+    )
+]
+
+# Aggiorna la lista dei menu disponibili
+all_menu_items = [
+    create_submenu(
+        name="Configurazione",
+        items=config_menu_items,
+        description="Gestione configurazione sistema"
+    ),
+    create_separator(),
+    create_command(
+        name="Scarica Dati",
+        callback=download_historical_data,
+        description="Scarica dati storici"
+    ),
+    create_command(
+        name="Visualizza Dati",
+        callback=view_historical_data,
+        description="Visualizza dati storici"
+    ),
+    create_separator(),
+    create_submenu(
+        name="Geni",
+        items=gene_menu_items,
+        description="Gestione e test dei geni"
+    )
+]

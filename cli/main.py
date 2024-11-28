@@ -26,7 +26,8 @@ from cli.menu import (
     create_separator,
     download_historical_data,
     view_historical_data,
-    config_menu_items
+    config_menu_items,
+    gene_menu_items  # Aggiungo l'import dei gene_menu_items
 )
 from cli.progress import (
     create_spinner,
@@ -140,6 +141,17 @@ def setup_main_menu() -> MenuManager:
         description="Impostazioni sistema"
     )
     menu.add_menu_item(config_menu)
+    
+    # Aggiungi separatore prima del menu dei geni
+    menu.add_menu_item(create_separator())
+    
+    # Crea sottomenu Geni
+    genes_menu = create_submenu(
+        name="Geni",
+        items=gene_menu_items,  # Usa i gene_menu_items definiti in menu_items.py
+        description="Gestione e test dei geni"
+    )
+    menu.add_menu_item(genes_menu)
     
     logger.debug("Fine configurazione menu principale")
     return menu

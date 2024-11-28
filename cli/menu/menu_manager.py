@@ -29,6 +29,7 @@ class MenuManager:
         self.items: List[MenuItem] = []
         self.context = MenuContext()
         self.console = Console()
+        self.menu_stack: List[List[MenuItem]] = []  # Stack per tenere traccia dei menu
         self.current_items: Optional[List[MenuItem]] = None
         self.logger = logging.getLogger(__name__)
         
@@ -178,7 +179,10 @@ class MenuManager:
             
         if choice == '0' and self.context.current_path:
             self.context.pop_path()
-            self.current_items = None
+            if self.menu_stack:  # Se c'è un menu precedente nello stack
+                self.current_items = self.menu_stack.pop()  # Ripristina il menu precedente
+            else:
+                self.current_items = None  # Solo se lo stack è vuoto, torna al menu principale
             return True
             
         try:
@@ -201,6 +205,7 @@ class MenuManager:
                         self.logger.debug(f"Nome: {subitem.name}, Visibile: {subitem.is_visible()}, Tipo: {type(subitem)}")
                     
                     self.context.push_path(item.name)
+                    self.menu_stack.append(self.current_items if self.current_items is not None else self.items)
                     self.current_items = item.get_items()
                     return True
                     
@@ -240,6 +245,7 @@ class MenuManager:
         self.items.clear()
         self.context.clear()
         self.current_items = None
+        self.menu_stack.clear()
         
     def set_data(self, key: str, value: Any) -> None:
         """
