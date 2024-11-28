@@ -5,7 +5,7 @@ Modulo per la gestione del logging nell'applicazione CLI.
 Fornisce formattatori personalizzati e gestione centralizzata dei log.
 """
 
-from typing import Optional, Any
+from typing import Optional, Any, Union
 
 from .log_manager import LogManager, get_log_manager
 from .formatters import (
@@ -27,6 +27,7 @@ __all__ = [
 ]
 
 def setup_logging(
+    config: Union[str, dict, None] = None,
     log_level: str = "INFO",
     format_type: str = "colored",
     **kwargs: Any
@@ -35,6 +36,7 @@ def setup_logging(
     Configura il sistema di logging con le impostazioni specificate.
     
     Args:
+        config: Percorso del file di configurazione YAML o dizionario di configurazione
         log_level: Livello di logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         format_type: Tipo di formattatore da utilizzare
         **kwargs: Argomenti aggiuntivi per la configurazione
@@ -52,6 +54,10 @@ def setup_logging(
     
     # Imposta il livello di log
     log_manager.set_level(numeric_level)
+    
+    # Se è un percorso di file, configura da YAML
+    if isinstance(config, str):
+        log_manager.configure_from_yaml(config)
     
     # Configura il formattatore
     formatter = get_formatter(format_type, **kwargs)

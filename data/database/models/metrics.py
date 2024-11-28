@@ -13,9 +13,8 @@ from sqlalchemy import (
     JSON
 )
 from sqlalchemy.orm import relationship, Mapped
-from sqlalchemy.ext.declarative import declarative_base
 
-Base = declarative_base()
+from .market_data import Base
 
 class PerformanceMetrics(Base):
     """Metriche di performance del mercato."""

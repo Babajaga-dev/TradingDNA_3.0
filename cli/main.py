@@ -11,9 +11,12 @@ import time
 import traceback
 import logging
 import asyncio
+import nest_asyncio
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from datetime import datetime, timedelta
+from sqlalchemy import select, func
+from tabulate import tabulate
 
 from cli.logger import setup_logging, get_logger
 from cli.menu import (
@@ -21,7 +24,9 @@ from cli.menu import (
     create_command,
     create_submenu,
     create_separator,
-    create_menu_from_dict
+    download_historical_data,
+    view_historical_data,
+    config_menu_items
 )
 from cli.progress import (
     create_spinner,
@@ -32,28 +37,18 @@ from cli.config import (
     load_system_config,
     get_config_loader
 )
+from cli.menu.download_manager import DownloadManager
+from data.database.models import get_session, Symbol, MarketData, Exchange
 
-from data.collection.downloader import DataDownloader, DownloadConfig
-from data.database.models import get_session
+# Configura un logger specifico per questo modulo
+logger = logging.getLogger(__name__)
 
-def simulate_long_operation(steps: int = 10, delay: float = 0.2) -> None:
-    """Simula un'operazione lunga per testing."""
-    progress = create_progress_bar(
-        total=steps,
-        description="Elaborazione in corso",
-        style="blocks",
-        show_percentage=True,
-        show_eta=True
-    )
-    
-    progress.start()
-    for i in range(steps):
-        time.sleep(delay)
-        progress.update(i + 1)
-    progress.stop()
+# Abilita il supporto per asyncio nidificato
+nest_asyncio.apply()
 
 def simulate_loading(duration: float = 2.0) -> None:
     """Simula un caricamento per testing."""
+    logger.debug(f"Inizio simulazione caricamento di {duration} secondi")
     spinner = create_spinner(
         description="Caricamento",
         style="dots",
@@ -63,11 +58,11 @@ def simulate_loading(duration: float = 2.0) -> None:
     spinner.start()
     time.sleep(duration)
     spinner.stop()
+    logger.debug("Fine simulazione caricamento")
 
 def check_system_status() -> str:
     """Verifica lo stato del sistema."""
-    logger = get_logger(__name__)
-    logger.info("Verificando stato sistema...")
+    logger.debug("Inizio verifica stato sistema")
     
     spinner = create_spinner(description="Verifica stato in corso")
     spinner.start()
@@ -80,195 +75,14 @@ def check_system_status() -> str:
         status = []
         status.append(f"Log Level: {config['system']['log_level']}")
         status.append(f"Data Directory: {config['system']['data_dir']}")
-        status.append(f"Trading Mode: {config['trading']['mode']}")
-        status.append(f"Symbols: {', '.join(config['trading']['symbols'])}")
-        status.append(f"Timeframes: {', '.join(config['trading']['timeframes'])}")
-        status.append(f"Indicators Enabled: {config['indicators']['enabled']}")
-        status.append(f"Backup Enabled: {config['security']['enable_backup']}")
+        status.append(f"Trading Mode: {config['portfolio']['mode']}")
+        status.append(f"Symbols: {', '.join(config['portfolio']['symbols'])}")
+        status.append(f"Timeframes: {', '.join(config['portfolio']['timeframes'])}")
         
+        logger.debug("Fine verifica stato sistema")
         return "\n".join(status)
     finally:
         spinner.stop()
-
-async def download_historical_data() -> str:
-    """Scarica dati storici."""
-    logger = get_logger(__name__)
-    logger.info("Avvio download dati storici...")
-    
-    config = get_config_loader().config
-    
-    # Crea configurazione download
-    download_config = DownloadConfig(
-        exchanges=[{
-            'id': 'binance',
-            'config': {
-                'apiKey': config['exchanges']['binance']['api_key'],
-                'secret': config['exchanges']['binance']['api_secret']
-            }
-        }],
-        symbols=config['trading']['symbols'],
-        timeframes=config['trading']['timeframes'],
-        start_date=datetime.utcnow() - timedelta(days=365),  # Ultimo anno
-        validate_data=True,
-        update_metrics=True,
-        max_concurrent=5,
-        batch_size=1000
-    )
-    
-    # Crea sessione database
-    async with get_session() as session:
-        # Inizializza downloader
-        downloader = DataDownloader(session, download_config)
-        
-        # Progress bar
-        progress = create_progress_bar(
-            total=len(download_config.symbols) * len(download_config.timeframes),
-            description="Download dati storici",
-            style="blocks",
-            show_percentage=True,
-            show_eta=True
-        )
-        
-        try:
-            # Setup iniziale
-            await downloader.setup()
-            
-            # Avvia download
-            progress.start()
-            stats = await downloader.download_data()
-            progress.stop()
-            
-            # Prepara report
-            duration = stats.duration
-            minutes = int(duration / 60)
-            seconds = int(duration % 60)
-            
-            return f"""Download completato in {minutes}m {seconds}s
-Candele totali: {stats.total_candles}
-Candele valide: {stats.valid_candles}
-Candele invalide: {stats.invalid_candles}
-Candele mancanti: {stats.missing_candles}
-Tasso validazione: {stats.validation_rate:.1%}"""
-            
-        except Exception as e:
-            logger.error(f"Errore durante il download: {str(e)}")
-            return f"Errore durante il download: {str(e)}"
-
-def import_data() -> str:
-    """Importa dati nel sistema."""
-    logger = get_logger(__name__)
-    logger.info("Avvio importazione dati...")
-    
-    config = get_config_loader().config
-    data_dir = Path(config['system']['data_dir'])
-    symbols = config['trading']['symbols']
-    
-    # Simula importazione con progress bar
-    steps = len(symbols)
-    progress = create_progress_bar(
-        total=steps,
-        description="Importazione dati",
-        style="blocks",
-        show_percentage=True,
-        show_eta=True
-    )
-    
-    progress.start()
-    for i, symbol in enumerate(symbols):
-        logger.info(f"Importazione {symbol}...")
-        time.sleep(0.5)  # Simula operazione
-        progress.update(i + 1)
-    progress.stop()
-    
-    return "Importazione completata con successo"
-
-def export_data() -> str:
-    """Esporta dati dal sistema."""
-    logger = get_logger(__name__)
-    logger.info("Avvio esportazione dati...")
-    
-    config = get_config_loader().config
-    data_dir = Path(config['system']['data_dir'])
-    timeframes = config['trading']['timeframes']
-    
-    # Simula esportazione con progress bar
-    steps = len(timeframes)
-    progress = create_progress_bar(
-        total=steps,
-        description="Esportazione dati",
-        style="blocks",
-        show_percentage=True,
-        show_eta=True
-    )
-    
-    progress.start()
-    for i, tf in enumerate(timeframes):
-        logger.info(f"Esportazione timeframe {tf}...")
-        time.sleep(0.4)  # Simula operazione
-        progress.update(i + 1)
-    progress.stop()
-    
-    return "Esportazione completata con successo"
-
-def manage_parameters() -> str:
-    """Gestisce i parametri del sistema."""
-    logger = get_logger(__name__)
-    logger.info("Apertura gestione parametri...")
-    
-    config = get_config_loader()
-    
-    # Simula caricamento
-    spinner = create_spinner(description="Caricamento parametri")
-    spinner.start()
-    time.sleep(1)
-    spinner.stop()
-    
-    # Mostra parametri correnti
-    current_config = config.config
-    return f"""Parametri correnti:
-Log Level: {current_config['system']['log_level']}
-Trading Mode: {current_config['trading']['mode']}
-Indicators Enabled: {current_config['indicators']['enabled']}
-Cache Size: {current_config['indicators']['cache_size']}
-Backup Enabled: {current_config['security']['enable_backup']}
-Backup Interval: {current_config['security']['backup_interval']}s"""
-
-def manage_backup() -> str:
-    """Gestisce i backup del sistema."""
-    logger = get_logger(__name__)
-    logger.info("Avvio procedura backup...")
-    
-    config = get_config_loader().config
-    if not config['security']['enable_backup']:
-        return "Backup disabilitato nelle impostazioni"
-    
-    # Simula backup con progress bar
-    progress = create_progress_bar(
-        total=5,
-        description="Backup in corso",
-        style="blocks",
-        show_percentage=True,
-        show_eta=True
-    )
-    
-    progress.start()
-    
-    # Simula fasi del backup
-    steps = [
-        ("Preparazione backup", 0.3),
-        ("Backup configurazione", 0.4),
-        ("Backup dati trading", 0.6),
-        ("Backup indicatori", 0.4),
-        ("Finalizzazione", 0.3)
-    ]
-    
-    for i, (step, duration) in enumerate(steps):
-        logger.info(f"Backup: {step}...")
-        time.sleep(duration)
-        progress.update(i + 1)
-    
-    progress.stop()
-    return "Backup completato con successo"
 
 def setup_main_menu() -> MenuManager:
     """
@@ -277,111 +91,126 @@ def setup_main_menu() -> MenuManager:
     Returns:
         MenuManager configurato con tutti i comandi
     """
-    # Crea il menu principale
-    menu_structure = {
-        'name': 'Menu Principale',
-        'items': [
-            {
-                'type': 'command',
-                'name': 'Status Sistema',
-                'callback': lambda: check_system_status(),
-                'description': 'Verifica lo stato del sistema'
-            },
-            {
-                'type': 'separator'
-            },
-            {
-                'type': 'submenu',
-                'name': 'Gestione Dati',
-                'description': 'Operazioni sui dati',
-                'items': [
-                    {
-                        'type': 'command',
-                        'name': 'Scarica Dati Storici',
-                        'callback': lambda: asyncio.run(download_historical_data()),
-                        'description': 'Scarica dati storici da exchange'
-                    },
-                    {
-                        'type': 'command',
-                        'name': 'Importa Dati',
-                        'callback': lambda: import_data(),
-                        'description': 'Importa nuovi dati nel sistema'
-                    },
-                    {
-                        'type': 'command',
-                        'name': 'Esporta Dati',
-                        'callback': lambda: export_data(),
-                        'description': 'Esporta dati dal sistema'
-                    }
-                ]
-            },
-            {
-                'type': 'submenu',
-                'name': 'Configurazione',
-                'description': 'Impostazioni sistema',
-                'items': [
-                    {
-                        'type': 'command',
-                        'name': 'Parametri',
-                        'callback': lambda: manage_parameters(),
-                        'description': 'Gestione parametri sistema'
-                    },
-                    {
-                        'type': 'command',
-                        'name': 'Backup',
-                        'callback': lambda: manage_backup(),
-                        'description': 'Gestione backup sistema',
-                        'confirm': True
-                    }
-                ]
-            }
-        ]
-    }
+    logger.debug("Inizio configurazione menu principale")
+    menu = MenuManager("TradingDNA CLI")
     
-    return create_menu_from_dict(menu_structure, "TradingDNA CLI")
+    # Aggiungi Status Sistema
+    menu.add_menu_item(create_command(
+        name="Status Sistema",
+        callback=lambda: check_system_status(),
+        description="Verifica lo stato del sistema"
+    ))
+    
+    # Aggiungi separatore
+    menu.add_menu_item(create_separator())
+    
+    # Crea sottomenu Gestione Dati
+    logger.debug("Creazione comandi Gestione Dati")
+    data_menu_items = [
+        create_command(
+            name="Scarica Dati Storici",
+            callback=download_historical_data,
+            description="Scarica dati storici da exchange",
+            visible=True  # Forza la visibilità
+        ),
+        create_command(
+            name="Visualizza Dati Storici",
+            callback=view_historical_data,
+            description="Visualizza i dati storici delle crypto disponibili",
+            visible=True  # Forza la visibilità
+        )
+    ]
+    
+    # Debug: stampa i comandi del sottomenu Gestione Dati
+    logger.debug("Comandi nel sottomenu Gestione Dati:")
+    for item in data_menu_items:
+        logger.debug(f"Nome: {item.name}, Visibile: {item.is_visible()}, Tipo: {type(item)}")
+    
+    data_menu = create_submenu(
+        name="Gestione Dati",
+        items=data_menu_items,
+        description="Operazioni sui dati"
+    )
+    menu.add_menu_item(data_menu)
+    
+    # Crea sottomenu Configurazione
+    config_menu = create_submenu(
+        name="Configurazione",
+        items=config_menu_items,  # Usa i config_menu_items definiti in menu_items.py
+        description="Impostazioni sistema"
+    )
+    menu.add_menu_item(config_menu)
+    
+    logger.debug("Fine configurazione menu principale")
+    return menu
+
+def initialize_event_loop():
+    """Inizializza l'event loop globale."""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop
 
 def main():
     """Entry point principale dell'applicazione."""
     try:
-        print("Initializing...")  # Debug print
+        # Setup logging di base per messaggi iniziali
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            stream=sys.stdout
+        )
         
-        # Carica configurazione
-        logger = get_logger(__name__)
-        print("Logger created...")  # Debug print
-        logger.info("Caricamento configurazione...")
-        
-        try:
-            config = load_system_config()
-            setup_logging(
-                log_level=config['system']['log_level'],
-                format_type="colored"
-            )
-        except ConfigError as e:
-            print(f"Config error: {str(e)}")  # Debug print
-            logger.error(f"Errore configurazione: {str(e)}")
-            logger.info("Utilizzo configurazione predefinita")
-            setup_logging(log_level="INFO", format_type="colored")
+        # Configura il logger specifico per questo modulo
+        logger.setLevel(logging.DEBUG)
         
         logger.info("Inizializzazione TradingDNA CLI Framework...")
+        
+        # Inizializza l'event loop globale
+        loop = initialize_event_loop()
+        
+        # Carica configurazione
+        logger.debug("Caricamento configurazione...")
+        try:
+            config = load_system_config()
+            
+            # Configura logging con le impostazioni del sistema
+            logger.debug("Configurazione logging...")
+            setup_logging("config/logging.yaml")
+            
+            logger.debug("Logging configurato da YAML")
+            
+        except ConfigError as e:
+            logger.error(f"Errore configurazione: {str(e)}")
+            logger.info("Utilizzo configurazione predefinita")
+            setup_logging("config/logging.yaml")
         
         # Simula caricamento iniziale
         simulate_loading()
         
         # Crea e mostra il menu principale
+        logger.debug("Creazione menu principale")
         menu = setup_main_menu()
+        logger.debug("Menu principale creato, inizio visualizzazione")
         menu.show_menu()
         
         logger.info("Chiusura applicazione...")
         
     except KeyboardInterrupt:
-        print("Keyboard interrupt detected...")  # Debug print
         logger.info("Interruzione da tastiera - Chiusura in corso...")
         sys.exit(0)
     except Exception as e:
-        print(f"Fatal error: {str(e)}")  # Debug print
-        print("\nTraceback completo:")
-        traceback.print_exc()
+        logger.error(f"Errore fatale: {str(e)}", exc_info=True)
         sys.exit(1)
+    finally:
+        # Chiudi l'event loop
+        try:
+            loop = asyncio.get_event_loop()
+            loop.close()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()

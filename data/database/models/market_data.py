@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
     Column, Integer, Float, String, DateTime, Boolean,
-    ForeignKey, Index, UniqueConstraint
+    ForeignKey, Index, UniqueConstraint, select
 )
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.ext.declarative import declarative_base
@@ -60,7 +60,7 @@ class MarketData(Base):
     
     __tablename__ = 'market_data'
     
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     exchange_id = Column(Integer, ForeignKey('exchanges.id'), nullable=False)
     symbol_id = Column(Integer, ForeignKey('symbols.id'), nullable=False)
     timestamp = Column(DateTime, nullable=False)
@@ -118,6 +118,15 @@ class MarketData(Base):
             name='uix_market_data'
         )
     )
+
+    @classmethod
+    async def insert_and_get_id(cls, session, **kwargs):
+        """Inserisce un nuovo record e restituisce l'ID."""
+        instance = cls(**kwargs)
+        session.add(instance)
+        await session.flush()  # Forza il flush per ottenere l'ID
+        await session.refresh(instance)  # Ricarica l'istanza per assicurarsi di avere l'ID
+        return instance.id
     
     @property
     def tr(self) -> float:

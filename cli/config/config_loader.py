@@ -2,7 +2,7 @@
 Config Loader
 ------------
 Gestisce il caricamento e la validazione delle configurazioni del sistema.
-Supporta file YAML e validazione schema.
+Supporta file YAML multipli e validazione schema.
 """
 
 import os
@@ -25,6 +25,14 @@ class ConfigLoadError(ConfigError):
 
 class ConfigLoader:
     """Gestore delle configurazioni del sistema."""
+    
+    CONFIG_FILES = [
+        "system.yaml",
+        "networks.yaml", 
+        "portfolio.yaml",
+        "logging.yaml",
+        "security.yaml"
+    ]
     
     def __init__(self, config_dir: Optional[str] = None):
         """
@@ -67,15 +75,15 @@ class ConfigLoader:
                 errors.append(str(e))
         return errors
         
-    def load_config(self, filename: str) -> Dict[str, Any]:
+    def load_config_file(self, filename: str) -> Dict[str, Any]:
         """
-        Carica la configurazione da file YAML.
+        Carica un singolo file di configurazione.
         
         Args:
             filename: Nome del file di configurazione
             
         Returns:
-            Configurazione caricata
+            Configurazione caricata dal file
             
         Raises:
             ConfigLoadError: Se ci sono errori nel caricamento
@@ -87,40 +95,74 @@ class ConfigLoader:
                 config = yaml.safe_load(f)
                 
             if not isinstance(config, dict):
-                raise ConfigLoadError("Il file di configurazione deve contenere un dizionario")
+                raise ConfigLoadError(f"Il file {filename} deve contenere un dizionario")
                 
-            # Valida la configurazione
-            errors = self.validate_config(config)
-            if errors:
-                raise ConfigValidationError(
-                    "Errori di validazione:\n" + "\n".join(errors)
-                )
-                
-            self.config = config
             return config
             
         except YAMLError as e:
-            raise ConfigLoadError(f"Errore nel parsing YAML: {str(e)}")
+            raise ConfigLoadError(f"Errore nel parsing YAML di {filename}: {str(e)}")
         except OSError as e:
-            raise ConfigLoadError(f"Errore di I/O: {str(e)}")
+            raise ConfigLoadError(f"Errore di I/O per {filename}: {str(e)}")
             
-    def save_config(self, filename: str):
+    def load_all_configs(self):
         """
-        Salva la configurazione corrente su file.
+        Carica tutti i file di configurazione e li unisce.
+        
+        Raises:
+            ConfigLoadError: Se ci sono errori nel caricamento
+            ConfigValidationError: Se ci sono errori di validazione
+        """
+        merged_config = {}
+        
+        for filename in self.CONFIG_FILES:
+            try:
+                config = self.load_config_file(filename)
+                self.merge_config(merged_config, config)
+            except ConfigLoadError as e:
+                raise ConfigLoadError(f"Errore nel caricamento di {filename}: {str(e)}")
+                
+        # Valida la configurazione completa
+        errors = self.validate_config(merged_config)
+        if errors:
+            raise ConfigValidationError(
+                "Errori di validazione:\n" + "\n".join(errors)
+            )
+            
+        self.config = merged_config
+        return merged_config
+        
+    def save_config(self, section: str):
+        """
+        Salva una sezione della configurazione nel file appropriato.
         
         Args:
-            filename: Nome del file di destinazione
+            section: Nome della sezione da salvare (system, networks, portfolio, logging, security)
             
         Raises:
             ConfigError: Se ci sono errori nel salvataggio
         """
+        section_mapping = {
+            'system': 'system.yaml',
+            'networks': 'networks.yaml',
+            'portfolio': 'portfolio.yaml',
+            'logging': 'logging.yaml',
+            'security': 'security.yaml'
+        }
+        
+        if section not in section_mapping:
+            raise ConfigError(f"Sezione non valida: {section}")
+            
+        filename = section_mapping[section]
         file_path = self.config_dir / filename
         
         try:
+            # Estrai solo la sezione richiesta
+            section_config = {section: self.config.get(section, {})}
+            
             with open(file_path, 'w', encoding='utf-8') as f:
-                yaml.safe_dump(self.config, f, default_flow_style=False)
+                yaml.safe_dump(section_config, f, default_flow_style=False)
         except Exception as e:
-            raise ConfigError(f"Errore nel salvataggio della configurazione: {str(e)}")
+            raise ConfigError(f"Errore nel salvataggio della configurazione {section}: {str(e)}")
             
     def get_value(self, key: str, default: Any = None) -> Any:
         """
@@ -163,56 +205,89 @@ class ConfigLoader:
             
         config[keys[-1]] = value
         
-    def merge_config(self, other_config: Dict[str, Any]):
+        # Salva la sezione appropriata
+        section = keys[0]
+        self.save_config(section)
+        
+    def merge_config(self, base: Dict[str, Any], other: Dict[str, Any]):
         """
-        Unisce un'altra configurazione con quella corrente.
+        Unisce due configurazioni ricorsivamente.
         
         Args:
-            other_config: Configurazione da unire
+            base: Configurazione base
+            other: Configurazione da unire
         """
-        def merge_dict(base: dict, other: dict):
-            for key, value in other.items():
-                if (
-                    key in base and 
-                    isinstance(base[key], dict) and 
-                    isinstance(value, dict)
-                ):
-                    merge_dict(base[key], value)
-                else:
-                    base[key] = value
-                    
-        merge_dict(self.config, other_config)
-        
-    def create_default_config(self, filename: str = "config.yaml"):
+        for key, value in other.items():
+            if (
+                key in base and 
+                isinstance(base[key], dict) and 
+                isinstance(value, dict)
+            ):
+                self.merge_config(base[key], value)
+            else:
+                base[key] = value
+                
+    def create_default_configs(self):
         """
-        Crea un file di configurazione predefinito.
-        
-        Args:
-            filename: Nome del file di configurazione
+        Crea i file di configurazione predefiniti.
         """
-        default_config = {
-            'system': {
-                'log_level': 'INFO',
-                'log_format': 'colored',
-                'data_dir': 'data'
+        default_configs = {
+            'system.yaml': {
+                'system': {
+                    'data_dir': 'data',
+                    'log_level': 'INFO',
+                    'log_format': 'colored',
+                    'indicators': {
+                        'enabled': True,
+                        'cache_size': 1000
+                    }
+                }
             },
-            'trading': {
-                'mode': 'backtest',
-                'symbols': ['BTCUSDT', 'ETHUSDT'],
-                'timeframes': ['1h', '4h', '1d']
+            'networks.yaml': {
+                'networks': {
+                    'binance': {
+                        'api_key': 'your_api_key_here',
+                        'api_secret': 'your_api_secret_here'
+                    }
+                }
             },
-            'indicators': {
-                'enabled': True,
-                'cache_size': 1000
+            'portfolio.yaml': {
+                'portfolio': {
+                    'mode': 'backtest',
+                    'symbols': ['BTCUSDT', 'ETHUSDT', 'BNBUSDT'],
+                    'timeframes': ['1h', '4h', '1d']
+                }
             },
-            'security': {
-                'enable_backup': True,
-                'backup_interval': 86400  # 24h in secondi
+            'logging.yaml': {
+                'logging': {
+                    'handlers': {
+                        'console': {
+                            'enabled': True,
+                            'format': 'colored'
+                        },
+                        'file': {
+                            'enabled': True,
+                            'path': 'logs/tradingdna.log',
+                            'format': 'detailed'
+                        }
+                    }
+                }
+            },
+            'security.yaml': {
+                'security': {
+                    'enable_backup': True,
+                    'backup_interval': 86400
+                }
             }
         }
         
-        self.config = default_config
-        self.save_config(filename)
+        for filename, config in default_configs.items():
+            file_path = self.config_dir / filename
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    yaml.safe_dump(config, f, default_flow_style=False)
+            except Exception as e:
+                raise ConfigError(f"Errore nella creazione del file {filename}: {str(e)}")
 
 # Istanza singleton del ConfigLoader
 _config_loader: Optional[ConfigLoader] = None

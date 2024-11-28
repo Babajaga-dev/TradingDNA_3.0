@@ -74,13 +74,10 @@ def create_config(config_dir: Optional[str] = None) -> ConfigLoader:
     
     return loader
 
-def load_system_config(filename: str = "config.yaml") -> Dict[str, Any]:
+def load_system_config() -> Dict[str, Any]:
     """
     Carica la configurazione di sistema.
     
-    Args:
-        filename: Nome del file di configurazione
-        
     Returns:
         Configurazione caricata
         
@@ -90,11 +87,12 @@ def load_system_config(filename: str = "config.yaml") -> Dict[str, Any]:
     loader = get_config_loader()
     
     try:
-        # Se il file non esiste, crea configurazione predefinita
-        if not (loader.config_dir / filename).exists():
-            loader.create_default_config(filename)
+        # Se i file non esistono, crea configurazioni predefinite
+        config_files_exist = all((loader.config_dir / f).exists() for f in loader.CONFIG_FILES)
+        if not config_files_exist:
+            loader.create_default_configs()
             
-        return loader.load_config(filename)
+        return loader.load_all_configs()
         
     except Exception as e:
         raise ConfigError(f"Errore nel caricamento della configurazione: {str(e)}")

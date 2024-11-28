@@ -6,6 +6,7 @@ Utilizza rich per una UI moderna e reattiva.
 """
 
 import sys
+import logging
 from typing import List, Optional, Dict, Any
 from rich.console import Console
 from rich.table import Table
@@ -15,7 +16,10 @@ from rich.style import Style
 from rich.text import Text
 from rich.box import ROUNDED
 
-from .menu_items import MenuItem, MenuContext, SeparatorMenuItem, download_data_command
+from .menu_items import (
+    MenuItem, MenuContext, SeparatorMenuItem, 
+    SubMenuItem
+)
 
 class MenuManager:
     """Gestore del menu interattivo."""
@@ -25,9 +29,8 @@ class MenuManager:
         self.items: List[MenuItem] = []
         self.context = MenuContext()
         self.console = Console()
-        
-        # Aggiungi il comando per il download dei dati storici
-        self.add_menu_item(download_data_command)
+        self.current_items: Optional[List[MenuItem]] = None
+        self.logger = logging.getLogger(__name__)
         
     def add_menu_item(self, item: MenuItem) -> None:
         """
@@ -56,18 +59,26 @@ class MenuManager:
         """
         table = Table(show_header=True, header_style="bold magenta", box=ROUNDED, padding=(0, 2))
         
-        # Aggiungi colonne per indice e nome
-        table.add_column("Index", style="cyan", justify="center")
-        table.add_column("Name", style="bold white", justify="left")
-        table.add_column("Description", style="dim", justify="left")
+        # Aggiungi colonne per indice, icona e nome
+        table.add_column("", style="cyan", justify="center", width=4)  # Indice
+        table.add_column("", style="cyan", justify="center", width=4)  # Icona
+        table.add_column("Nome", style="bold white", justify="left")
+        table.add_column("Descrizione", style="dim", justify="left")
+        
+        # Usa il menu corrente se presente, altrimenti usa il menu principale
+        items_to_show = self.current_items if self.current_items is not None else self.items
         
         # Aggiungi elementi visibili
-        visible_items = [item for item in self.items if item.is_visible()]
+        visible_items = [item for item in items_to_show if item.is_visible()]
         
-        for idx, item in enumerate(visible_items, 1):
+        # Contatore per l'indice degli elementi non-separatori
+        idx_counter = 1
+        
+        for item in visible_items:
             if isinstance(item, SeparatorMenuItem):
                 # Aggiungi separatore
                 table.add_row(
+                    "",
                     "",
                     item.char * item.length,
                     "",
@@ -77,12 +88,41 @@ class MenuManager:
                 # Stile per elementi disabilitati
                 style = "dim" if not item.is_enabled() else None
                 
+                # Scegli l'icona in base al tipo di elemento
+                if isinstance(item, SubMenuItem):  # SubMenuItem
+                    icon = "📁"
+                elif hasattr(item, 'callback'):  # CommandMenuItem
+                    if "configur" in item.name.lower():
+                        icon = "⚙️"
+                    elif "scarica" in item.name.lower() or "download" in item.name.lower():
+                        icon = "⬇️"
+                    elif "visualizza" in item.name.lower():
+                        icon = "👁️"
+                    elif "analisi" in item.name.lower():
+                        icon = "📊"
+                    elif "report" in item.name.lower():
+                        icon = "📝"
+                    elif "monitor" in item.name.lower():
+                        icon = "📺"
+                    elif "backup" in item.name.lower():
+                        icon = "💾"
+                    elif "status" in item.name.lower():
+                        icon = "🔧"
+                    else:
+                        icon = "🔧"
+                else:
+                    icon = "📌"
+                
                 table.add_row(
-                    str(idx) if item.is_enabled() else "-",
+                    str(idx_counter) if item.is_enabled() else "-",
+                    icon,
                     item.name,
                     item.description,
                     style=style
                 )
+                
+                # Incrementa l'indice solo per gli elementi non-separatori
+                idx_counter += 1
                 
         return table
         
@@ -106,8 +146,8 @@ class MenuManager:
         
         # Mostra opzioni di navigazione
         if self.context.current_path:
-            self.console.print("\n[dim]0. Torna indietro[/dim]")
-        self.console.print("[dim]q. Esci[/dim]")
+            self.console.print("\n[dim]0. 🔙 Torna indietro[/dim]")
+        self.console.print("[dim]q. 🚪 Esci[/dim]")
         
     def _get_visible_enabled_items(self) -> List[MenuItem]:
         """
@@ -116,8 +156,9 @@ class MenuManager:
         Returns:
             Lista di elementi del menu visibili e abilitati
         """
+        items_to_check = self.current_items if self.current_items is not None else self.items
         return [
-            item for item in self.items 
+            item for item in items_to_check 
             if item.is_visible() and item.is_enabled() and 
             not isinstance(item, SeparatorMenuItem)
         ]
@@ -137,18 +178,31 @@ class MenuManager:
             
         if choice == '0' and self.context.current_path:
             self.context.pop_path()
+            self.current_items = None
             return True
             
         try:
             idx = int(choice) - 1
+            
+            # Debug: stampa tutti gli elementi visibili
+            self.logger.debug("Elementi visibili nel menu:")
             enabled_items = self._get_visible_enabled_items()
+            for i, item in enumerate(enabled_items):
+                self.logger.debug(f"Indice {i+1}: Nome={item.name}, Tipo={type(item)}")
             
             if 0 <= idx < len(enabled_items):
                 item = enabled_items[idx]
                 
-                # Aggiorna il contesto per sottomenu
-                if hasattr(item, 'items'):
+                # Gestisci sottomenu
+                if isinstance(item, SubMenuItem):
+                    self.logger.debug(f"Selezionato sottomenu: {item.name}")
+                    self.logger.debug(f"Dettagli sottomenu:")
+                    for subitem in item.get_items():
+                        self.logger.debug(f"Nome: {subitem.name}, Visibile: {subitem.is_visible()}, Tipo: {type(subitem)}")
+                    
                     self.context.push_path(item.name)
+                    self.current_items = item.get_items()
+                    return True
                     
                 try:
                     # Esegui l'azione dell'elemento
@@ -185,6 +239,7 @@ class MenuManager:
         """Pulisce il menu e il suo contesto."""
         self.items.clear()
         self.context.clear()
+        self.current_items = None
         
     def set_data(self, key: str, value: Any) -> None:
         """

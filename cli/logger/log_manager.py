@@ -5,7 +5,12 @@ Gestisce il sistema di logging centralizzato per il framework CLI.
 Fornisce formattazione personalizzata e gestione dei livelli di log.
 """
 
-from typing import Dict, Optional
+import logging
+import logging.config
+import yaml
+import os
+import sys
+from typing import Dict, Optional, Any
 from pathlib import Path
 from datetime import datetime
 
@@ -30,40 +35,103 @@ class LogManager:
         self.log_dir = Path("logs")
         self.handlers: Dict[str, 'logging.Handler'] = {}
         
+        # Setup logging di base per debug iniziale
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            stream=sys.stdout
+        )
+        self._debug_logger = logging.getLogger('LogManager')
+        
         # Crea directory logs se non esiste
-        self.log_dir.mkdir(exist_ok=True)
+        self._ensure_log_directory()
         
-        # Configurazione base
-        self._setup_base_config()
+    def _ensure_log_directory(self):
+        """Crea la directory dei log se non esiste."""
+        try:
+            # Converti in percorso assoluto
+            log_path = self.log_dir.resolve()
+            
+            # Verifica e crea directory
+            log_path.mkdir(parents=True, exist_ok=True)
+            
+            # Verifica permessi di scrittura
+            test_file = log_path / "test_write.txt"
+            try:
+                with open(test_file, 'w') as f:
+                    f.write("Test scrittura log")
+                test_file.unlink()  # Rimuovi il file di test
+            except Exception as e:
+                raise
+            
+        except Exception as e:
+            raise
         
-    def _setup_base_config(self):
-        """Configura le impostazioni base del logging."""
-        # Importa qui per evitare importazione circolare
-        import logging
-        from rich.console import Console
-        from rich.logging import RichHandler
-        from .formatters import ColoredFormatter
+    def configure_from_yaml(self, config_path: str):
+        """
+        Configura il logging da file YAML.
         
-        # Handler per console con rich formatting
-        console = Console()
-        console_handler = RichHandler(
-            console=console,
-            show_time=True,
-            show_path=False,
-            rich_tracebacks=True
-        )
-        console_handler.setFormatter(ColoredFormatter())
-        self.handlers['console'] = console_handler
+        Args:
+            config_path: Percorso del file di configurazione YAML
+        """
+        try:
+            # Verifica esistenza file
+            if not os.path.exists(config_path):
+                raise FileNotFoundError(f"File di configurazione non trovato: {config_path}")
+            
+            # Ricarica il file per parsing
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Verifica struttura configurazione
+            if not config or 'logging' not in config:
+                raise ValueError("Configurazione logging non valida")
+            
+            # Carica configurazione di sistema
+            system_config = self._load_system_config()
+            
+            # Applica impostazioni da system.yaml
+            config = self._apply_system_config(config, system_config)
+            
+            # Configura il logging
+            logging.config.dictConfig(config['logging'])
+            
+            # Test scrittura log
+            test_logger = logging.getLogger('LogTest')
+            test_logger.info("Test scrittura log - Configurazione completata")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._setup_base_config()
         
-        # Handler per file con rotazione giornaliera
-        today = datetime.now().strftime('%Y-%m-%d')
-        file_handler = logging.FileHandler(
-            self.log_dir / f"tradingdna_{today}.log",
-            encoding='utf-8'
-        )
-        file_handler.setFormatter(ColoredFormatter())
-        self.handlers['file'] = file_handler
+    def _load_system_config(self) -> Dict[str, Any]:
+        """Carica la configurazione di sistema."""
+        try:
+            with open("config/system.yaml", 'r') as f:
+                system_yaml = yaml.safe_load(f)
+                return system_yaml.get('system', {})
+        except Exception as e:
+            return {}
         
+    def _apply_system_config(self, config: Dict, system_config: Dict) -> Dict:
+        """Applica le impostazioni di sistema alla configurazione di logging."""
+        # Estrai log level e formato da system_config
+        log_level = system_config.get('log_level', 'INFO').upper()
+        log_format = system_config.get('log_format', 'colored')
+        
+        # Aggiorna livello di logging
+        if 'logging' in config and 'root' in config['logging']:
+            config['logging']['root']['level'] = log_level
+        
+        # Gestisci formattazione
+        if log_format == 'colored':
+            for handler in config.get('logging', {}).get('handlers', {}).values():
+                if handler.get('formatter') == 'simple':
+                    handler['formatter'] = 'colored'
+        
+        return config
+    
     def get_logger(self, name: str) -> 'logging.Logger':
         """
         Ottiene un logger configurato per il modulo specificato.
@@ -74,19 +142,7 @@ class LogManager:
         Returns:
             Logger configurato
         """
-        import logging
-        logger = logging.getLogger(name)
-        logger.setLevel(self.log_level)
-        
-        # Rimuovi handler esistenti
-        for handler in logger.handlers[:]:
-            logger.removeHandler(handler)
-        
-        # Aggiungi i nostri handler
-        for handler in self.handlers.values():
-            logger.addHandler(handler)
-            
-        return logger
+        return logging.getLogger(name)
     
     def set_level(self, level: int):
         """
@@ -95,7 +151,6 @@ class LogManager:
         Args:
             level: Nuovo livello di logging
         """
-        import logging
         self.log_level = level
         logging.getLogger().setLevel(level)
         
@@ -111,17 +166,21 @@ class LogManager:
         import logging
         from .formatters import ColoredFormatter
         
-        handler = logging.FileHandler(
-            self.log_dir / filename,
-            encoding='utf-8'
-        )
-        
-        if formatter:
-            handler.setFormatter(formatter)
-        else:
-            handler.setFormatter(ColoredFormatter())
+        try:
+            self._ensure_log_directory()
             
-        self.handlers[filename] = handler
+            log_path = str(self.log_dir / filename)
+            handler = logging.FileHandler(log_path, encoding='utf-8')
+            
+            if formatter:
+                handler.setFormatter(formatter)
+            else:
+                handler.setFormatter(ColoredFormatter())
+                
+            self.handlers[filename] = handler
+            
+        except Exception as e:
+            raise
         
     def remove_handler(self, handler_name: str):
         """
@@ -154,3 +213,17 @@ def get_log_manager() -> LogManager:
     if _log_manager is None:
         _log_manager = LogManager()
     return _log_manager
+
+def setup_logging(config_path: str) -> LogManager:
+    """
+    Configura il logging dal file YAML specificato.
+    
+    Args:
+        config_path: Percorso del file di configurazione
+        
+    Returns:
+        Istanza configurata del LogManager
+    """
+    manager = get_log_manager()
+    manager.configure_from_yaml(config_path)
+    return manager

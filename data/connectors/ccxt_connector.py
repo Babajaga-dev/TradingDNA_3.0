@@ -28,6 +28,16 @@ from .base_connector import (
 class CCXTConnector(BaseConnector):
     """Connettore per exchange usando CCXT."""
     
+    # Mappa dei timeframe standard a quelli di Binance
+    TIMEFRAME_MAP = {
+        '1m': '1m',
+        '5m': '5m',
+        '15m': '15m',
+        '1h': '1h',
+        '4h': '4h',
+        '1d': '1d'
+    }
+    
     def __init__(
         self,
         exchange_id: str,
@@ -45,21 +55,42 @@ class CCXTConnector(BaseConnector):
         # Crea istanza CCXT
         exchange_class = getattr(ccxt, exchange_id)
         
-        self.exchange = exchange_class({
-            'apiKey': config.get('api_key'),
-            'secret': config.get('api_secret'),
-            'password': config.get('password'),
+        # Configura l'exchange
+        exchange_config = {
             'enableRateLimit': True,
             'timeout': config.get('timeout', 30000),
             'verbose': config.get('verbose', False)
-        })
+        }
+        
+        if exchange_id == 'binance':
+            exchange_config['options'] = {
+                'defaultType': 'spot',
+                'fetchMarkets': {
+                    'type': 'spot'
+                },
+                'fetchOHLCV': {
+                    'type': 'spot'
+                }
+            }
+        
+        # Aggiungi API key solo se sono configurate e non sono i valori di default
+        api_key = config.get('api_key')
+        api_secret = config.get('api_secret')
+        if (api_key and api_secret and 
+            api_key != 'your_api_key_here' and 
+            api_secret != 'your_api_secret_here'):
+            exchange_config['apiKey'] = api_key
+            exchange_config['secret'] = api_secret
+        
+        self.exchange = exchange_class(exchange_config)
         
         # Configura rate limits
         if hasattr(self.exchange, 'rateLimit'):
             self.rate_limiter = self.exchange.rateLimit
             
-        # Cache mercati
+        # Cache mercati e timeframe
         self._markets: Optional[Dict[str, Any]] = None
+        self._timeframes_cache: Optional[List[str]] = None
         
     async def fetch_markets(self) -> List[Dict[str, Any]]:
         """
@@ -115,21 +146,33 @@ class CCXTConnector(BaseConnector):
                     f"{self.exchange_id} non supporta OHLCV"
                 )
                 
-            # Verifica timeframe
-            if timeframe not in self.exchange.timeframes:
+            # Mappa il timeframe al formato corretto per l'exchange
+            exchange_timeframe = self.TIMEFRAME_MAP.get(timeframe)
+            if not exchange_timeframe:
                 raise ExchangeError(
                     f"Timeframe {timeframe} non supportato"
                 )
-                
-            # Recupera OHLCV
-            ohlcv = await self.exchange.fetch_ohlcv(
-                symbol,
-                timeframe,
-                since,
-                limit
-            )
             
-            return ohlcv
+            # Recupera OHLCV con retry in caso di errore
+            max_retries = 3
+            retry_delay = 1  # secondi
+            
+            for attempt in range(max_retries):
+                try:
+                    # Usa la firma corretta del metodo fetch_ohlcv
+                    ohlcv = await self.exchange.fetch_ohlcv(
+                        symbol,
+                        exchange_timeframe,
+                        since,
+                        limit
+                    )
+                    return ohlcv
+                except (CCXTNetworkError, RateLimitExceeded) as e:
+                    if attempt == max_retries - 1:  # Ultimo tentativo
+                        raise
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+            
+            return []  # Non dovrebbe mai arrivare qui
             
         except CCXTNetworkError as e:
             raise NetworkError(str(e))
@@ -219,13 +262,33 @@ class CCXTConnector(BaseConnector):
         Returns:
             Lista dei timeframes
         """
-        if not self._timeframes_cache:
-            if not hasattr(self.exchange, 'timeframes'):
-                self._timeframes_cache = ['1m', '5m', '15m', '1h', '4h', '1d']
-            else:
-                self._timeframes_cache = list(self.exchange.timeframes.keys())
-                
-        return self._timeframes_cache
+        return list(self.TIMEFRAME_MAP.keys())
+        
+    def parse_timeframe(self, timeframe: str) -> int:
+        """
+        Converte un timeframe in millisecondi.
+        
+        Args:
+            timeframe: Timeframe da convertire
+            
+        Returns:
+            Millisecondi corrispondenti al timeframe
+        """
+        units = {
+            'm': 60 * 1000,  # minuti in ms
+            'h': 60 * 60 * 1000,  # ore in ms
+            'd': 24 * 60 * 60 * 1000  # giorni in ms
+        }
+        
+        unit = timeframe[-1]
+        if unit not in units:
+            raise ExchangeError(f"Unità timeframe non valida: {unit}")
+            
+        try:
+            value = int(timeframe[:-1])
+            return value * units[unit]
+        except ValueError:
+            raise ExchangeError(f"Formato timeframe non valido: {timeframe}")
         
     async def close(self) -> None:
         """Chiude il connettore e libera le risorse."""

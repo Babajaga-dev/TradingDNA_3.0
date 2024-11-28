@@ -1,0 +1,53 @@
+logging:
+  version: 1
+  disable_existing_loggers: false
+  
+  formatters:
+    simple:
+      format: '%(asctime)s | %(levelname)s | %(name)s | %(message)s'
+    colored:
+      format: '%(asctime)s | %(levelname)s | %(name)s | %(message)s'
+    detailed:
+      format: '%(asctime)s | %(levelname)s | %(name)s | %(message)s | [%(filename)s:%(lineno)d]'
+  
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: ERROR
+      formatter: colored
+      stream: ext://sys.stdout
+    
+    file:
+      class: logging.handlers.TimedRotatingFileHandler
+      level: ERROR
+      formatter: detailed
+      filename: logs/tradingdna.log
+      when: midnight
+      interval: 1
+      backupCount: 10
+      encoding: utf8
+  
+  loggers:
+    data.collection:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
+      
+    data.connectors:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
+      
+    sqlalchemy:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
+      
+    sqlalchemy.engine:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
+  
+  root:
+    level: ERROR
+    handlers: [console, file]
