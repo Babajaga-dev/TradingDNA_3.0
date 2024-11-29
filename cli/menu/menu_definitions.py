@@ -106,6 +106,56 @@ moving_average_menu_items = [
     )
 ]
 
+# Menu items per i geni MACD
+macd_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('macd'),
+        description="Testa il gene MACD su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('macd'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('macd'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('macd'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni Bollinger
+bollinger_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('bollinger'),
+        description="Testa il gene Bollinger Bands su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('bollinger'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('bollinger'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('bollinger'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
 # Sottomenu per ogni gene
 gene_menu_items = [
     create_submenu(
@@ -117,6 +167,16 @@ gene_menu_items = [
         name="Moving Average",
         items=moving_average_menu_items,
         description="Moving Average"
+    ),
+    create_submenu(
+        name="MACD",
+        items=macd_menu_items,
+        description="Moving Average Convergence Divergence"
+    ),
+    create_submenu(
+        name="Bollinger Bands",
+        items=bollinger_menu_items,
+        description="Bollinger Bands"
     ),
     create_separator(),
     create_command(

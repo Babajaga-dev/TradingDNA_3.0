@@ -237,14 +237,23 @@ def reset_database() -> None:
 def check_gene_parameters_exist() -> bool:
     """
     Verifica se esistono parametri dei geni nel database.
+    Controlla specificamente ogni tipo di gene.
     
     Returns:
-        True se esistono parametri, False altrimenti
+        True se tutti i geni hanno i loro parametri, False altrimenti
     """
     session = get_session()
     try:
-        exists = session.query(GeneParameter).first() is not None
-        return exists
+        # Lista dei geni da verificare
+        gene_types = ['rsi', 'moving_average', 'macd', 'bollinger']
+        
+        for gene_type in gene_types:
+            # Verifica se esistono parametri per questo gene
+            exists = session.query(GeneParameter).filter_by(gene_type=gene_type).first() is not None
+            if not exists:
+                return False
+                
+        return True
     finally:
         session.close()
 

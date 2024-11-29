@@ -213,7 +213,8 @@ def reset_system():
         # 8. Reset dei geni
         print("Reset dei geni in corso...")
         gene_manager = GeneManager()
-        gene_types = ['rsi', 'moving_average']  # Lista dei tipi di geni disponibili
+        # Lista aggiornata dei tipi di geni disponibili
+        gene_types = ['rsi', 'moving_average', 'macd', 'bollinger']
         for gene_type in gene_types:
             try:
                 gene_manager.reset_gene_params(gene_type)

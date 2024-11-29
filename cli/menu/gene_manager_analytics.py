@@ -14,7 +14,7 @@ from rich.prompt import Prompt
 from data.database.models.models import (
     get_session, Symbol, MarketData
 )
-from ..genes import RSIGene, MovingAverageGene
+from ..genes import RSIGene, MovingAverageGene, MACDGene, BollingerGene
 from .gene_manager_base import GeneManagerBase
 
 class GeneManagerAnalytics(GeneManagerBase):
@@ -166,7 +166,9 @@ class GeneManagerAnalytics(GeneManagerBase):
         # Mapping dei tipi di gene alle classi
         gene_classes = {
             'rsi': RSIGene,
-            'moving_average': MovingAverageGene
+            'moving_average': MovingAverageGene,
+            'macd': MACDGene,
+            'bollinger': BollingerGene
         }
         
         if gene_type not in gene_classes:
@@ -203,7 +205,17 @@ class GeneManagerAnalytics(GeneManagerBase):
                 
             # Calcola segnali
             signals = []
-            min_data_points = int(gene.params.get('period', 14)) + 1  # Default a 14 per RSI se non specificato
+            # Determina il minimo numero di punti dati necessari in base al tipo di gene
+            if gene_type == 'macd':
+                min_data_points = max(
+                    int(float(gene.params['fast_period'])),
+                    int(float(gene.params['slow_period'])),
+                    int(float(gene.params['signal_period']))
+                ) + 1
+            elif gene_type == 'bollinger':
+                min_data_points = int(float(gene.params['period'])) + 1
+            else:
+                min_data_points = int(float(gene.params.get('period', 14))) + 1
             
             for i in range(min_data_points, len(prices) + 1):
                 signal = gene.calculate_signal(prices[:i])
@@ -218,9 +230,21 @@ class GeneManagerAnalytics(GeneManagerBase):
             # Subplot superiore per i prezzi
             plt.subplot(2, 1, 1)
             plt.plot(prices, label='Prezzo')
+            
+            # Aggiungi indicatori specifici al grafico
             if gene_type == 'moving_average':
                 ma = gene.calculate_ma(prices)
                 plt.plot(ma, label=f'{gene.params["type"]} ({gene.params["period"]})', linestyle='--')
+            elif gene_type == 'macd':
+                macd_line, signal_line, _ = gene.calculate_macd(prices)
+                plt.plot(macd_line, label='MACD Line', linestyle='--')
+                plt.plot(signal_line, label='Signal Line', linestyle=':')
+            elif gene_type == 'bollinger':
+                middle_band, upper_band, lower_band = gene.calculate_bands(prices)
+                plt.plot(middle_band, label='Middle Band', linestyle='--')
+                plt.plot(upper_band, label='Upper Band', linestyle=':')
+                plt.plot(lower_band, label='Lower Band', linestyle=':')
+                
             plt.title(f'Test Gene {gene_type.upper()} - {pair} ({timeframe})')
             plt.legend()
             plt.grid(True)

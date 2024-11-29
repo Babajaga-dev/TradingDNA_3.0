@@ -52,6 +52,16 @@ logging:
       level: ERROR
       handlers: [console, file]
       propagate: false
+      
+    cli.genes.macd:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
+      
+    cli.genes.bollinger:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
   
   root:
     level: ERROR

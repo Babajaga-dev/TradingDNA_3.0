@@ -19,6 +19,25 @@ gene:
       period: 20
       std_dev: 2
       touch_percentage: 0.5
+  macd:
+    constraints:
+      fast_period:
+        max: 50
+        min: 5
+      slow_period:
+        max: 100
+        min: 10
+      signal_period:
+        max: 30
+        min: 3
+      divergence:
+        max: 0.1
+        min: 0.01
+    default:
+      fast_period: 12
+      slow_period: 26
+      signal_period: 9
+      divergence: 0.02
   moving_average:
     constraints:
       distance:
