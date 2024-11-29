@@ -39,7 +39,10 @@ from cli.config import (
     get_config_loader
 )
 from cli.menu.download_manager import DownloadManager
-from data.database.models import get_session, Symbol, MarketData, Exchange
+from data.database.models import (
+    get_session, Symbol, MarketData, Exchange,
+    initialize_gene_parameters, check_gene_parameters_exist
+)
 
 # Configura un logger specifico per questo modulo
 logger = logging.getLogger(__name__)
@@ -193,6 +196,12 @@ def main():
             setup_logging("config/logging.yaml")
             
             logger.debug("Logging configurato da YAML")
+            
+            # Verifica e inizializza i parametri dei geni se non esistono
+            if not check_gene_parameters_exist():
+                logger.debug("Inizializzazione parametri dei geni...")
+                initialize_gene_parameters(config)
+                logger.debug("Parametri dei geni inizializzati")
             
         except ConfigError as e:
             logger.error(f"Errore configurazione: {str(e)}")

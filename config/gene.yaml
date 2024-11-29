@@ -27,9 +27,10 @@ gene:
       period:
         max: 200
         min: 5
-      types:
-      - SMA
-      - EMA
+      type:
+        types:
+        - SMA
+        - EMA
     default:
       distance: 0.02
       period: 20

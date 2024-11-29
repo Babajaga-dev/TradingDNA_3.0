@@ -19,6 +19,7 @@ from .models import (
     reset_database,
     initialize_gene_parameters,
     update_gene_parameter,
+    check_gene_parameters_exist,
     DATABASE_URL,
     SYNC_DATABASE_URL
 )
@@ -38,6 +39,7 @@ __all__ = [
     'reset_database',
     'initialize_gene_parameters',
     'update_gene_parameter',
+    'check_gene_parameters_exist',
     'DATABASE_URL',
     'SYNC_DATABASE_URL'
 ]

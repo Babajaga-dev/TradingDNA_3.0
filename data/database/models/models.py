@@ -234,13 +234,32 @@ def reset_database() -> None:
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
+def check_gene_parameters_exist() -> bool:
+    """
+    Verifica se esistono parametri dei geni nel database.
+    
+    Returns:
+        True se esistono parametri, False altrimenti
+    """
+    session = get_session()
+    try:
+        exists = session.query(GeneParameter).first() is not None
+        return exists
+    finally:
+        session.close()
+
 def initialize_gene_parameters(config: Dict[str, Any]) -> None:
     """
     Inizializza i parametri dei geni nel database usando i valori di default dalla configurazione.
+    Inizializza solo se non esistono già parametri nel database.
     
     Args:
         config: Configurazione contenente i valori di default dei geni
     """
+    # Verifica se esistono già parametri
+    if check_gene_parameters_exist():
+        return
+
     session = get_session()
     try:
         # Ottieni la configurazione dei geni

@@ -88,13 +88,18 @@ class GeneManagerBase:
         try:
             params = session.query(GeneParameter).filter_by(gene_type=gene_type).all()
             
-            # Recupera i vincoli dalla configurazione per determinare il tipo di valore
+            # Recupera i vincoli dalla configurazione
             constraints = self.config.get_value(f'gene.{gene_type}.constraints', {})
             
             result = {}
             for param in params:
-                # Se il parametro ha dei tipi specifici nei vincoli, mantienilo come stringa
-                if 'types' in constraints.get(param.parameter_name, {}):
+                param_constraints = constraints.get(param.parameter_name, {})
+                
+                # Se il parametro ha un vincolo 'types', mantienilo come stringa
+                if 'types' in param_constraints:
+                    result[param.parameter_name] = param.value
+                # Se il parametro è 'type', mantienilo come stringa (per retrocompatibilità)
+                elif param.parameter_name == 'type':
                     result[param.parameter_name] = param.value
                 else:
                     # Altrimenti convertilo in float
@@ -190,13 +195,15 @@ class GeneManagerBase:
                             raise ValueError(f"Valore non valido. Valori consentiti: {', '.join(constraint['types'])}")
                         value_to_set = new_value
                     else:
-                        # Converti al tipo corretto
+                        # Converti al tipo corretto e valida
                         value_to_set = float(new_value)
                         # Valida secondo i vincoli
                         if 'min' in constraint and value_to_set < constraint['min']:
                             raise ValueError(f"Valore minimo consentito: {constraint['min']}")
                         if 'max' in constraint and value_to_set > constraint['max']:
                             raise ValueError(f"Valore massimo consentito: {constraint['max']}")
+                        # Riconverti in stringa per il salvataggio
+                        value_to_set = str(value_to_set)
                             
                     # Aggiorna il valore nel database
                     update_gene_parameter(gene_type, param_name, value_to_set)
@@ -240,8 +247,8 @@ class GeneManagerBase:
                     # Se è un parametro di tipo stringa, lo lasciamo come stringa
                     value_to_set = default_value
                 else:
-                    # Altrimenti lo convertiamo in float
-                    value_to_set = float(default_value)
+                    # Altrimenti lo convertiamo in float e poi di nuovo in stringa
+                    value_to_set = str(float(default_value))
                     
                 update_gene_parameter(gene_type, param_name, value_to_set)
                 

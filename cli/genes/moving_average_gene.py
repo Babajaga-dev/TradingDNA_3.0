@@ -30,8 +30,9 @@ class MovingAverageGene(Gene):
         Returns:
             Array numpy con i valori della media mobile
         """
-        period = int(self.params['period'])
-        ma_type = self.params['type']
+        # Converti period in int, ma lascia type come stringa
+        period = int(float(self.params['period']))
+        ma_type = str(self.params['type'])  # Assicura che sia una stringa
         
         if len(data) < period:
             return np.full_like(data, np.nan)
@@ -68,7 +69,7 @@ class MovingAverageGene(Gene):
         Returns:
             Segnale normalizzato tra -1 e 1
         """
-        period = int(self.params['period'])
+        period = int(float(self.params['period']))
         if len(data) < period + 1:
             return 0
             
@@ -83,7 +84,7 @@ class MovingAverageGene(Gene):
         distance_percent = (last_price - last_ma) / last_ma
         
         # Normalizza il segnale basandosi sulla distanza configurata
-        signal = distance_percent / self.params['distance']
+        signal = distance_percent / float(self.params['distance'])
         
         return np.clip(signal, -1, 1)
         
@@ -97,7 +98,7 @@ class MovingAverageGene(Gene):
         Returns:
             Punteggio di fitness del gene
         """
-        period = int(self.params['period'])
+        period = int(float(self.params['period']))
         if len(data) < period + 1:
             return 0
             
