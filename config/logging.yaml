@@ -62,6 +62,16 @@ logging:
       level: ERROR
       handlers: [console, file]
       propagate: false
+
+    cli.genes.stochastic:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
+      
+    cli.genes.atr:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
   
   root:
     level: ERROR

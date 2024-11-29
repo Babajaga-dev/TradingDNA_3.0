@@ -69,3 +69,33 @@ gene:
       overbought: 50
       oversold: 10
       period: 10
+  stochastic:
+    constraints:
+      k_period:
+        max: 50
+        min: 5
+      d_period:
+        max: 20
+        min: 3
+      overbought:
+        max: 90
+        min: 60
+      oversold:
+        max: 40
+        min: 10
+    default:
+      k_period: 14
+      d_period: 3
+      overbought: 80
+      oversold: 20
+  atr:
+    constraints:
+      period:
+        max: 50
+        min: 5
+      multiplier:
+        max: 3.0
+        min: 0.5
+    default:
+      period: 14
+      multiplier: 1.0

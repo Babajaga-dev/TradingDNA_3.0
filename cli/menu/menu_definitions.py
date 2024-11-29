@@ -156,6 +156,56 @@ bollinger_menu_items = [
     )
 ]
 
+# Menu items per i geni Stochastic
+stochastic_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('stochastic'),
+        description="Testa il gene Stochastic Oscillator su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('stochastic'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('stochastic'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('stochastic'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni ATR
+atr_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('atr'),
+        description="Testa il gene ATR su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('atr'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('atr'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('atr'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
 # Sottomenu per ogni gene
 gene_menu_items = [
     create_submenu(
@@ -177,6 +227,16 @@ gene_menu_items = [
         name="Bollinger Bands",
         items=bollinger_menu_items,
         description="Bollinger Bands"
+    ),
+    create_submenu(
+        name="Stochastic",
+        items=stochastic_menu_items,
+        description="Stochastic Oscillator"
+    ),
+    create_submenu(
+        name="ATR",
+        items=atr_menu_items,
+        description="Average True Range"
     ),
     create_separator(),
     create_command(

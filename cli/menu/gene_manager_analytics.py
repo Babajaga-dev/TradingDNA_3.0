@@ -14,7 +14,10 @@ from rich.prompt import Prompt
 from data.database.models.models import (
     get_session, Symbol, MarketData
 )
-from ..genes import RSIGene, MovingAverageGene, MACDGene, BollingerGene
+from ..genes import (
+    RSIGene, MovingAverageGene, MACDGene, BollingerGene,
+    StochasticGene, ATRGene
+)
 from .gene_manager_base import GeneManagerBase
 
 class GeneManagerAnalytics(GeneManagerBase):
@@ -72,7 +75,7 @@ class GeneManagerAnalytics(GeneManagerBase):
             days: Numero di giorni di dati da recuperare
             
         Returns:
-            Array numpy con i prezzi di chiusura
+            Array numpy con i dati OHLC
         """
         session = get_session()
         try:
@@ -89,7 +92,8 @@ class GeneManagerAnalytics(GeneManagerBase):
                 self.console.print(f"[red]Nessun dato trovato per {pair} ({timeframe})[/red]")
                 return np.array([])
                 
-            return np.array([d.close for d in data])
+            # Restituisce array OHLC completo per i nuovi geni
+            return np.array([[d.open, d.high, d.low, d.close] for d in data])
         except Exception as e:
             self.logger.error(f"Errore nel recupero dei dati storici: {str(e)}")
             return np.array([])
@@ -168,7 +172,9 @@ class GeneManagerAnalytics(GeneManagerBase):
             'rsi': RSIGene,
             'moving_average': MovingAverageGene,
             'macd': MACDGene,
-            'bollinger': BollingerGene
+            'bollinger': BollingerGene,
+            'stochastic': StochasticGene,
+            'atr': ATRGene
         }
         
         if gene_type not in gene_classes:
@@ -196,12 +202,12 @@ class GeneManagerAnalytics(GeneManagerBase):
             self.console.print(f"\n[bold]Testing {pair} ({timeframe})[/bold]")
             
             # Recupera dati storici
-            prices = self.get_historical_data(pair, timeframe, days)
-            if len(prices) == 0:
+            data = self.get_historical_data(pair, timeframe, days)
+            if len(data) == 0:
                 continue
                 
-            if len(prices) < days:
-                self.console.print(f"[yellow]Attenzione: recuperati solo {len(prices)} giorni di dati[/yellow]")
+            if len(data) < days:
+                self.console.print(f"[yellow]Attenzione: recuperati solo {len(data)} giorni di dati[/yellow]")
                 
             # Calcola segnali
             signals = []
@@ -214,11 +220,18 @@ class GeneManagerAnalytics(GeneManagerBase):
                 ) + 1
             elif gene_type == 'bollinger':
                 min_data_points = int(float(gene.params['period'])) + 1
+            elif gene_type == 'stochastic':
+                min_data_points = max(
+                    int(float(gene.params['k_period'])),
+                    int(float(gene.params['d_period']))
+                ) + 1
+            elif gene_type == 'atr':
+                min_data_points = int(float(gene.params['period'])) + 1
             else:
                 min_data_points = int(float(gene.params.get('period', 14))) + 1
             
-            for i in range(min_data_points, len(prices) + 1):
-                signal = gene.calculate_signal(prices[:i])
+            for i in range(min_data_points, len(data) + 1):
+                signal = gene.calculate_signal(data[:i])
                 signals.append(signal)
                 
             # Padding con zeri all'inizio per mantenere la lunghezza
@@ -229,21 +242,28 @@ class GeneManagerAnalytics(GeneManagerBase):
             
             # Subplot superiore per i prezzi
             plt.subplot(2, 1, 1)
-            plt.plot(prices, label='Prezzo')
+            plt.plot(data[:, 3], label='Prezzo')  # Usa il prezzo di chiusura
             
             # Aggiungi indicatori specifici al grafico
             if gene_type == 'moving_average':
-                ma = gene.calculate_ma(prices)
+                ma = gene.calculate_ma(data[:, 3])  # Usa solo close price
                 plt.plot(ma, label=f'{gene.params["type"]} ({gene.params["period"]})', linestyle='--')
             elif gene_type == 'macd':
-                macd_line, signal_line, _ = gene.calculate_macd(prices)
+                macd_line, signal_line, _ = gene.calculate_macd(data[:, 3])  # Usa solo close price
                 plt.plot(macd_line, label='MACD Line', linestyle='--')
                 plt.plot(signal_line, label='Signal Line', linestyle=':')
             elif gene_type == 'bollinger':
-                middle_band, upper_band, lower_band = gene.calculate_bands(prices)
+                middle_band, upper_band, lower_band = gene.calculate_bands(data[:, 3])  # Usa solo close price
                 plt.plot(middle_band, label='Middle Band', linestyle='--')
                 plt.plot(upper_band, label='Upper Band', linestyle=':')
                 plt.plot(lower_band, label='Lower Band', linestyle=':')
+            elif gene_type == 'stochastic':
+                k_line, d_line = gene.calculate_stochastic(data[:, 1], data[:, 2], data[:, 3])  # high, low, close
+                plt.plot(k_line, label='%K Line', linestyle='--')
+                plt.plot(d_line, label='%D Line', linestyle=':')
+            elif gene_type == 'atr':
+                atr = gene.calculate_atr(data[:, 1], data[:, 2], data[:, 3])  # high, low, close
+                plt.plot(atr, label='ATR', linestyle='--')
                 
             plt.title(f'Test Gene {gene_type.upper()} - {pair} ({timeframe})')
             plt.legend()
@@ -270,7 +290,7 @@ class GeneManagerAnalytics(GeneManagerBase):
                 'Deviazione standard': np.std(non_zero_signals) if non_zero_signals else 0,
                 'Segnale minimo': min(non_zero_signals) if non_zero_signals else 0,
                 'Segnale massimo': max(non_zero_signals) if non_zero_signals else 0,
-                'Fitness score': gene.evaluate(prices)
+                'Fitness score': gene.evaluate(data)
             }
             
             # Valuta performance

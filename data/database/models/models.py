@@ -245,7 +245,7 @@ def check_gene_parameters_exist() -> bool:
     session = get_session()
     try:
         # Lista dei geni da verificare
-        gene_types = ['rsi', 'moving_average', 'macd', 'bollinger']
+        gene_types = ['rsi', 'moving_average', 'macd', 'bollinger', 'stochastic', 'atr']
         
         for gene_type in gene_types:
             # Verifica se esistono parametri per questo gene
@@ -260,17 +260,17 @@ def check_gene_parameters_exist() -> bool:
 def initialize_gene_parameters(config: Dict[str, Any]) -> None:
     """
     Inizializza i parametri dei geni nel database usando i valori di default dalla configurazione.
-    Inizializza solo se non esistono già parametri nel database.
+    Elimina tutti i parametri esistenti e li ricrea dai valori di default.
     
     Args:
         config: Configurazione contenente i valori di default dei geni
     """
-    # Verifica se esistono già parametri
-    if check_gene_parameters_exist():
-        return
-
     session = get_session()
     try:
+        # Elimina tutti i parametri esistenti
+        session.query(GeneParameter).delete()
+        session.commit()
+
         # Ottieni la configurazione dei geni
         gene_config = config.get('gene', {})
         
@@ -289,7 +289,7 @@ def initialize_gene_parameters(config: Dict[str, Any]) -> None:
                     parameter_name=param_name,
                     value=str(value)  # Converti tutto in stringa
                 )
-                session.merge(param)  # Usa merge invece di add per gestire gli aggiornamenti
+                session.add(param)
         
         session.commit()
     except Exception as e:
