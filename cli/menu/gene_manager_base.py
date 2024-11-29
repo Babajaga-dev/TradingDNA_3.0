@@ -11,10 +11,10 @@ from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 from ..config.config_loader import get_config_loader
 from ..logger.log_manager import get_logger
+from data.database.session_manager import DBSessionManager
 from data.database.models.models import (
-    get_session, initialize_gene_parameters,
-    GeneParameter, update_gene_parameter,
-    MarketData, Symbol, initialize_database
+    initialize_gene_parameters,
+    GeneParameter, MarketData, Symbol, initialize_database
 )
 
 class GeneManagerBase:
@@ -25,6 +25,7 @@ class GeneManagerBase:
         self.console = Console()
         self.logger = get_logger(__name__)
         self.config = get_config_loader()
+        self.db = DBSessionManager()
         
         # Assicura che il database sia inizializzato
         initialize_database()
@@ -36,8 +37,7 @@ class GeneManagerBase:
         Returns:
             True se ci sono dati, False altrimenti
         """
-        session = get_session()
-        try:
+        with self.db.session() as session:
             # Verifica se esistono simboli
             symbols_exist = session.query(Symbol).first() is not None
             if not symbols_exist:
@@ -71,8 +71,6 @@ class GeneManagerBase:
                 return False
                 
             return True
-        finally:
-            session.close()
 
     def get_gene_parameters(self, gene_type: str) -> Dict[str, float]:
         """
@@ -84,8 +82,7 @@ class GeneManagerBase:
         Returns:
             Dizionario dei parametri del gene
         """
-        session = get_session()
-        try:
+        with self.db.session() as session:
             params = session.query(GeneParameter).filter_by(gene_type=gene_type).all()
             
             # Recupera i vincoli dalla configurazione
@@ -106,8 +103,6 @@ class GeneManagerBase:
                     result[param.parameter_name] = float(param.value)
                     
             return result
-        finally:
-            session.close()
 
     def view_gene_params(self, gene_type: str) -> None:
         """
@@ -206,7 +201,21 @@ class GeneManagerBase:
                         value_to_set = str(value_to_set)
                             
                     # Aggiorna il valore nel database
-                    update_gene_parameter(gene_type, param_name, value_to_set)
+                    with self.db.session() as session:
+                        param = session.query(GeneParameter).filter_by(
+                            gene_type=gene_type,
+                            parameter_name=param_name
+                        ).first()
+                        
+                        if param:
+                            param.value = value_to_set
+                        else:
+                            param = GeneParameter(
+                                gene_type=gene_type,
+                                parameter_name=param_name,
+                                value=value_to_set
+                            )
+                            session.add(param)
                     break
                     
                 except ValueError as e:
@@ -240,17 +249,26 @@ class GeneManagerBase:
             return
             
         try:
-            # Aggiorna ogni parametro nel database con il valore di default
-            for param_name, default_value in default_params.items():
-                # Controlla se il parametro ha dei tipi specifici nei vincoli
-                if 'types' in constraints.get(param_name, {}):
-                    # Se è un parametro di tipo stringa, lo lasciamo come stringa
-                    value_to_set = default_value
-                else:
-                    # Altrimenti lo convertiamo in float e poi di nuovo in stringa
-                    value_to_set = str(float(default_value))
-                    
-                update_gene_parameter(gene_type, param_name, value_to_set)
+            with self.db.session() as session:
+                # Elimina i parametri esistenti
+                session.query(GeneParameter).filter_by(gene_type=gene_type).delete()
+                
+                # Aggiunge i nuovi parametri con i valori di default
+                for param_name, default_value in default_params.items():
+                    # Controlla se il parametro ha dei tipi specifici nei vincoli
+                    if 'types' in constraints.get(param_name, {}):
+                        # Se è un parametro di tipo stringa, lo lasciamo come stringa
+                        value_to_set = default_value
+                    else:
+                        # Altrimenti lo convertiamo in float e poi di nuovo in stringa
+                        value_to_set = str(float(default_value))
+                        
+                    param = GeneParameter(
+                        gene_type=gene_type,
+                        parameter_name=param_name,
+                        value=value_to_set
+                    )
+                    session.add(param)
                 
             self.console.print("[green]Parametri resettati con successo ai valori di default[/green]")
             

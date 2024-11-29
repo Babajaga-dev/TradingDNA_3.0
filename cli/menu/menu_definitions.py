@@ -8,10 +8,11 @@ import asyncio
 import nest_asyncio
 from data.collection.downloader import DataDownloader, DownloadConfig
 from data.database.models.models import (
-    get_session, initialize_gene_parameters,
+    initialize_gene_parameters,
     MarketData, Symbol, Exchange, SYNC_DATABASE_URL,
     initialize_database
 )
+from data.database.session_manager import DBSessionManager
 from .menu_core import create_command, create_submenu, create_separator
 from .menu_utils import (
     manage_parameters,

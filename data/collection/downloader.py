@@ -15,15 +15,15 @@ import pytz
 from dataclasses import dataclass
 import time
 
-from sqlalchemy.orm import Session
-from sqlalchemy import select, update, and_, insert
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from ..database.session_manager import DBSessionManager
 from ..database.models import (
     Exchange, Symbol, MarketData,
     PerformanceMetrics, RiskMetrics,
-    initialize_database, get_session
+    initialize_database
 )
 from ..connectors import (
     BaseConnector,
@@ -111,13 +111,13 @@ class DownloadStats:
 class DataDownloader:
     """Downloader dati da exchange."""
     
-    def __init__(self, session: Session, config: DownloadConfig):
-        self.session = session
+    def __init__(self, config: DownloadConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.stats = DownloadStats()
         self.connectors: Dict[str, BaseConnector] = {}
         self._exchange_map: Dict[int, str] = {}
+        self.db = DBSessionManager()
         
         system_config = get_config_loader().config
         self.batch_sizes = system_config['system']['download']['batch_size']
@@ -218,91 +218,94 @@ class DataDownloader:
 
     def _get_or_create_exchange(self, exchange_id: str) -> Exchange:
         """Ottiene o crea un exchange."""
-        stmt = select(Exchange).where(Exchange.name == exchange_id)
-        exchange_obj = self.session.execute(stmt).scalar_one_or_none()
-        
-        if not exchange_obj:
-            exchange_obj = Exchange(name=exchange_id)
-            self.session.add(exchange_obj)
-            self.session.flush()
-            self.session.refresh(exchange_obj)
-            self.session.commit()
-        
-        return exchange_obj
+        with self.db.session() as session:
+            stmt = text("SELECT id FROM exchanges WHERE name = :name")
+            result = session.execute(stmt, {"name": exchange_id}).scalar_one_or_none()
+            
+            if not result:
+                exchange_obj = Exchange(name=exchange_id)
+                session.add(exchange_obj)
+                session.flush()
+                session.refresh(exchange_obj)
+                return exchange_obj
+            
+            return session.get(Exchange, result)
 
     def _get_or_create_symbol(self, exchange_id: int, symbol: str) -> Symbol:
         """Ottiene o crea un simbolo."""
-        stmt = select(Symbol).where(
-            Symbol.exchange_id == exchange_id,
-            Symbol.name == symbol
-        )
-        symbol_obj = self.session.execute(stmt).scalar_one_or_none()
-        
-        if not symbol_obj:
-            if symbol.endswith('USDT'):
-                base = symbol[:-4]
-                quote = 'USDT'
-            elif symbol.endswith('BTC'):
-                base = symbol[:-3]
-                quote = 'BTC'
-            elif symbol.endswith('ETH'):
-                base = symbol[:-3]
-                quote = 'ETH'
-            else:
-                quote = symbol[-4:]
-                base = symbol[:-4]
-                
-            symbol_obj = Symbol(
-                exchange_id=exchange_id,
-                name=symbol,
-                base_asset=base,
-                quote_asset=quote
-            )
-            self.session.add(symbol_obj)
-            self.session.flush()
-            self.session.refresh(symbol_obj)
-            self.session.commit()
-        
-        return symbol_obj
+        with self.db.session() as session:
+            stmt = text("""
+                SELECT id FROM symbols 
+                WHERE exchange_id = :exchange_id AND name = :name
+            """)
+            result = session.execute(stmt, {
+                "exchange_id": exchange_id,
+                "name": symbol
+            }).scalar_one_or_none()
+            
+            if not result:
+                if symbol.endswith('USDT'):
+                    base = symbol[:-4]
+                    quote = 'USDT'
+                elif symbol.endswith('BTC'):
+                    base = symbol[:-3]
+                    quote = 'BTC'
+                elif symbol.endswith('ETH'):
+                    base = symbol[:-3]
+                    quote = 'ETH'
+                else:
+                    quote = symbol[-4:]
+                    base = symbol[:-4]
+                    
+                symbol_obj = Symbol(
+                    exchange_id=exchange_id,
+                    name=symbol,
+                    base_asset=base,
+                    quote_asset=quote
+                )
+                session.add(symbol_obj)
+                session.flush()
+                session.refresh(symbol_obj)
+                return symbol_obj
+            
+            return session.get(Symbol, result)
 
     def _save_market_data(self, exchange_id: int, symbol_id: int,
                          timeframe: str, candles: List[List[float]]):
         """Salva i dati di mercato usando UPSERT."""
         try:
-            for candle in candles:
-                local_timestamp = convert_to_local_time(candle[0])
-                
-                # Prepara i dati per l'inserimento/aggiornamento
-                data = {
-                    'exchange_id': exchange_id,
-                    'symbol_id': symbol_id,
-                    'timeframe': timeframe,
-                    'timestamp': local_timestamp,
-                    'open': candle[1],
-                    'high': candle[2],
-                    'low': candle[3],
-                    'close': candle[4],
-                    'volume': candle[5],
-                    'updated_at': datetime.utcnow(),
-                    'is_valid': True
-                }
-                
-                # Crea la query UPSERT
-                stmt = sqlite_insert(MarketData).values(data)
-                
-                # Definisce l'azione ON CONFLICT
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=['exchange_id', 'symbol_id', 'timeframe', 'timestamp'],
-                    set_=data
-                )
-                
-                self.session.execute(stmt)
-            
-            self.session.commit()
+            with self.db.session() as session:
+                for candle in candles:
+                    local_timestamp = convert_to_local_time(candle[0])
+                    
+                    # Prepara i dati per l'inserimento/aggiornamento
+                    data = {
+                        'exchange_id': exchange_id,
+                        'symbol_id': symbol_id,
+                        'timeframe': timeframe,
+                        'timestamp': local_timestamp,
+                        'open': candle[1],
+                        'high': candle[2],
+                        'low': candle[3],
+                        'close': candle[4],
+                        'volume': candle[5],
+                        'updated_at': datetime.utcnow(),
+                        'is_valid': True
+                    }
+                    
+                    # Crea la query UPSERT
+                    stmt = sqlite_insert(MarketData).values(data)
+                    
+                    # Definisce l'azione ON CONFLICT
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=['exchange_id', 'symbol_id', 'timeframe', 'timestamp'],
+                        set_=data
+                    )
+                    
+                    session.execute(stmt)
             
         except Exception as e:
             self.logger.error(f"Errore salvataggio dati: {str(e)}")
-            self.session.rollback()
             raise
 
     async def _process_symbol_timeframe(self, exchange_obj: Exchange, connector: BaseConnector,
@@ -313,13 +316,19 @@ class DataDownloader:
             
             symbol_obj = self._get_or_create_symbol(exchange_obj.id, symbol)
             
-            stmt = select(MarketData.timestamp).where(
-                MarketData.exchange_id == exchange_obj.id,
-                MarketData.symbol_id == symbol_obj.id,
-                MarketData.timeframe == timeframe
-            ).order_by(MarketData.timestamp.desc()).limit(1)
-            
-            last_date = self.session.execute(stmt).scalar_one_or_none()
+            with self.db.session() as session:
+                stmt = text("""
+                    SELECT timestamp FROM market_data 
+                    WHERE exchange_id = :exchange_id 
+                    AND symbol_id = :symbol_id 
+                    AND timeframe = :timeframe 
+                    ORDER BY timestamp DESC LIMIT 1
+                """)
+                last_date = session.execute(stmt, {
+                    "exchange_id": exchange_obj.id,
+                    "symbol_id": symbol_obj.id,
+                    "timeframe": timeframe
+                }).scalar_one_or_none()
             
             start_date = self.config.start_date
             if not start_date:
@@ -452,55 +461,53 @@ class DataDownloader:
     def _update_metrics(self):
         """Aggiorna metriche di performance e rischio."""
         try:
-            stmt = select(MarketData).order_by(
-                MarketData.exchange_id,
-                MarketData.symbol_id,
-                MarketData.timeframe,
-                MarketData.timestamp
-            )
-            market_data = self.session.execute(stmt).scalars().all()
-            
-            groups: Dict[Tuple[int, int, str], List[MarketData]] = {}
-            for data in market_data:
-                key = (data.exchange_id, data.symbol_id, data.timeframe)
-                if key not in groups:
-                    groups[key] = []
-                groups[key].append(data)
-            
-            for (exchange_id, symbol_id, timeframe), data in groups.items():
-                if len(data) < 2:
-                    continue
+            with self.db.session() as session:
+                stmt = text("""
+                    SELECT * FROM market_data 
+                    ORDER BY exchange_id, symbol_id, timeframe, timestamp
+                """)
+                result = session.execute(stmt)
+                market_data = result.fetchall()
+                
+                groups: Dict[Tuple[int, int, str], List[Any]] = {}
+                for data in market_data:
+                    key = (data.exchange_id, data.symbol_id, data.timeframe)
+                    if key not in groups:
+                        groups[key] = []
+                    groups[key].append(data)
+                
+                for (exchange_id, symbol_id, timeframe), data in groups.items():
+                    if len(data) < 2:
+                        continue
+                        
+                    prices = [d.close for d in data]
+                    volumes = [d.volume for d in data]
+                    returns = [
+                        (data[i].close - data[i-1].close) / data[i-1].close
+                        for i in range(1, len(data))
+                    ]
                     
-                prices = [d.close for d in data]
-                volumes = [d.volume for d in data]
-                returns = [
-                    (data[i].close - data[i-1].close) / data[i-1].close
-                    for i in range(1, len(data))
-                ]
-                
-                market_returns = returns
-                
-                perf = PerformanceMetrics(
-                    exchange_id=exchange_id,
-                    symbol_id=symbol_id,
-                    timeframe=timeframe,
-                    start_time=data[0].timestamp,
-                    end_time=data[-1].timestamp
-                )
-                perf.calculate_metrics(prices, volumes)
-                self.session.add(perf)
-                
-                risk = RiskMetrics(
-                    exchange_id=exchange_id,
-                    symbol_id=symbol_id,
-                    timeframe=timeframe,
-                    start_time=data[0].timestamp,
-                    end_time=data[-1].timestamp
-                )
-                risk.calculate_metrics(returns, market_returns, volumes[1:])
-                self.session.add(risk)
-            
-            self.session.commit()
+                    market_returns = returns
+                    
+                    perf = PerformanceMetrics(
+                        exchange_id=exchange_id,
+                        symbol_id=symbol_id,
+                        timeframe=timeframe,
+                        start_time=data[0].timestamp,
+                        end_time=data[-1].timestamp
+                    )
+                    perf.calculate_metrics(prices, volumes)
+                    session.add(perf)
+                    
+                    risk = RiskMetrics(
+                        exchange_id=exchange_id,
+                        symbol_id=symbol_id,
+                        timeframe=timeframe,
+                        start_time=data[0].timestamp,
+                        end_time=data[-1].timestamp
+                    )
+                    risk.calculate_metrics(returns, market_returns, volumes[1:])
+                    session.add(risk)
                 
         except SQLAlchemyError as e:
             self.logger.error(f"Errore aggiornamento metriche: {str(e)}")

@@ -7,36 +7,32 @@ Definizione dei modelli del database per il framework TradingDNA.
 # Standard library imports
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+import yaml
 
 # Third-party imports
 import numpy as np
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Float, Boolean,
+    Column, Integer, String, Float, Boolean,
     DateTime, ForeignKey, JSON, Text, Enum, UniqueConstraint
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker, Session
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-# Database configuration
-DATABASE_URL = "sqlite:///data/tradingdna.db"
-SYNC_DATABASE_URL = DATABASE_URL
+# Local imports
+from data.database.session_manager import DBSessionManager
+
+# Carica configurazione database
+with open('config/security.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+    DATABASE_URL = config['database']['url']
+    SYNC_DATABASE_URL = DATABASE_URL
 
 # Base class per i modelli
 Base = declarative_base()
 
-# Engine e Session
-engine = create_engine(DATABASE_URL)
-SessionMaker = sessionmaker(bind=engine)
-
-def get_session() -> Session:
-    """
-    Ottiene una nuova sessione del database.
-    
-    Returns:
-        Sessione del database
-    """
-    return SessionMaker()
+# Ottieni l'istanza del session manager
+db = DBSessionManager()
 
 class Exchange(Base):
     """Modello per gli exchange supportati."""
@@ -227,12 +223,12 @@ class RiskMetrics(Base):
 
 def initialize_database() -> None:
     """Inizializza il database creando tutte le tabelle."""
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(db.engine)
 
 def reset_database() -> None:
     """Resetta il database eliminando e ricreando tutte le tabelle."""
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    Base.metadata.drop_all(db.engine)
+    Base.metadata.create_all(db.engine)
 
 def check_gene_parameters_exist() -> bool:
     """
@@ -242,8 +238,7 @@ def check_gene_parameters_exist() -> bool:
     Returns:
         True se tutti i geni hanno i loro parametri, False altrimenti
     """
-    session = get_session()
-    try:
+    with db.session() as session:
         # Lista dei geni da verificare
         gene_types = ['rsi', 'moving_average', 'macd', 'bollinger', 'stochastic', 'atr']
         
@@ -254,8 +249,6 @@ def check_gene_parameters_exist() -> bool:
                 return False
                 
         return True
-    finally:
-        session.close()
 
 def initialize_gene_parameters(config: Dict[str, Any]) -> None:
     """
@@ -265,12 +258,10 @@ def initialize_gene_parameters(config: Dict[str, Any]) -> None:
     Args:
         config: Configurazione contenente i valori di default dei geni
     """
-    session = get_session()
-    try:
+    with db.session() as session:
         # Elimina tutti i parametri esistenti
         session.query(GeneParameter).delete()
-        session.commit()
-
+        
         # Ottieni la configurazione dei geni
         gene_config = config.get('gene', {})
         
@@ -290,13 +281,6 @@ def initialize_gene_parameters(config: Dict[str, Any]) -> None:
                     value=str(value)  # Converti tutto in stringa
                 )
                 session.add(param)
-        
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        raise e
-    finally:
-        session.close()
 
 def update_gene_parameter(gene_type: str, parameter_name: str, value: Any) -> None:
     """
@@ -307,8 +291,7 @@ def update_gene_parameter(gene_type: str, parameter_name: str, value: Any) -> No
         parameter_name: Nome del parametro
         value: Nuovo valore (può essere numero o stringa)
     """
-    session = get_session()
-    try:
+    with db.session() as session:
         # Cerca il parametro esistente
         param = session.query(GeneParameter).filter_by(
             gene_type=gene_type,
@@ -327,10 +310,3 @@ def update_gene_parameter(gene_type: str, parameter_name: str, value: Any) -> No
                 value=str(value)
             )
             session.add(param)
-            
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        raise e
-    finally:
-        session.close()

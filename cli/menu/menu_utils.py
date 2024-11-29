@@ -13,16 +13,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
 from typing import Callable, Optional, Any, Dict, List
-from sqlalchemy import create_engine, select, func, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import text, func
 from tabulate import tabulate
 from rich.panel import Panel
 
 from ..config import get_config_loader
+from data.database.session_manager import DBSessionManager
 from data.database.models.models import (
-    get_session, initialize_gene_parameters,
-    MarketData, Symbol, Exchange, SYNC_DATABASE_URL,
-    initialize_database
+    initialize_gene_parameters,
+    MarketData, Symbol, Exchange,
+    initialize_database, DATABASE_URL
 )
 from .gene_manager import GeneManager
 from .download_manager import DownloadManager
@@ -30,6 +30,9 @@ from cli.logger.log_manager import get_logger
 
 # Setup logger
 logger = get_logger('menu_utils')
+
+# Ottieni l'istanza del session manager
+db = DBSessionManager()
 
 def get_user_input(
     prompt: str,
@@ -154,28 +157,18 @@ def force_close_connections():
         # Chiudi tutte le connessioni SQLite
         sqlite3.connect(':memory:').close()
         
-        # Importa gli engine globali
-        from data.database.models.models import engine, sync_engine
-        
-        # Chiudi l'engine asincrono
-        if hasattr(engine, 'dispose'):
-            asyncio.get_event_loop().run_until_complete(engine.dispose())
-        
-        # Chiudi l'engine sincrono
-        if hasattr(sync_engine, 'dispose'):
-            sync_engine.dispose()
-        
-        # Chiudi tutte le sessioni attive
-        Session = sessionmaker(bind=sync_engine)
-        if hasattr(Session, 'close_all'):
-            Session.close_all()
+        # Chiudi gli engine del DBSessionManager
+        if hasattr(db.engine, 'dispose'):
+            db.engine.dispose()
+        if hasattr(db.async_engine, 'dispose'):
+            asyncio.get_event_loop().run_until_complete(db.async_engine.dispose())
         
         # Forza il garbage collector
         import gc
         gc.collect()
         
         # Attendi un momento per permettere la chiusura delle connessioni
-        time.sleep(5)  # Aumentato il tempo di attesa
+        time.sleep(5)
         
         # Verifica se ci sono ancora connessioni attive
         try:
@@ -187,10 +180,8 @@ def force_close_connections():
             )
             test_conn.close()
         except sqlite3.OperationalError:
-            # Se non riesce ad aprire il database, ci sono ancora connessioni attive
             print("Attenzione: Ci sono ancora connessioni attive al database")
-            # Attendi ulteriormente
-            time.sleep(5)  # Aumentato il tempo di attesa
+            time.sleep(5)
             
     except Exception as e:
         print(f"Errore durante la chiusura delle connessioni: {e}")
@@ -238,7 +229,7 @@ def reset_system():
                 for file in log_dir.glob("*"):
                     try:
                         if file.is_file():
-                            os.chmod(file, 0o777)  # Cambia i permessi per assicurarsi di poter eliminare
+                            os.chmod(file, 0o777)
                             file.unlink()
                     except Exception as e:
                         print(f"Avviso: Impossibile eliminare {file}: {e}")
@@ -272,7 +263,7 @@ def reset_system():
             for path in [db_path, journal_path, wal_path, shm_path]:
                 try:
                     if path.exists():
-                        os.chmod(path, 0o777)  # Cambia i permessi per assicurarsi di poter eliminare
+                        os.chmod(path, 0o777)
                         path.unlink()
                 except Exception as e:
                     print(f"Avviso: Impossibile eliminare {path}: {e}")
@@ -283,20 +274,11 @@ def reset_system():
         print("Inizializzazione nuovo database...")
         os.makedirs(db_path.parent, exist_ok=True)
         
-        # Crea una nuova connessione al database
-        engine = create_engine(
-            SYNC_DATABASE_URL,
-            isolation_level='SERIALIZABLE',
-            connect_args={'timeout': 30}
-        )
-        
         # Inizializza il database con le nuove tabelle
         initialize_database()
         
         # 6. Inserisci Binance con il nome corretto
-        Session = sessionmaker(bind=engine)
-        session = Session()
-        try:
+        with db.session() as session:
             # Verifica se Binance esiste già
             result = session.execute(
                 text("SELECT id FROM exchanges WHERE name = 'binance'")
@@ -320,9 +302,6 @@ def reset_system():
                     VALUES ('binance', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """)
                 )
-            session.commit()
-        finally:
-            session.close()
             
         print("Database inizializzato con exchange 'binance'")
         
@@ -381,12 +360,7 @@ def get_candles_per_day(timeframe: str) -> int:
 def view_historical_data():
     """Funzione per visualizzare i dati storici delle crypto."""
     try:
-        # Crea engine e session sincroni
-        engine = create_engine(SYNC_DATABASE_URL)
-        Session = sessionmaker(bind=engine)
-        session = Session()
-        
-        try:
+        with db.session() as session:
             # Recupera tutte le crypto disponibili
             symbols = session.query(Symbol).join(Exchange).all()
             
@@ -475,9 +449,6 @@ def view_historical_data():
                 ]
                 
                 print(tabulate(rows, headers=headers, tablefmt='grid'))
-                
-        finally:
-            session.close()
             
         return "Visualizzazione dati completata"
         

@@ -8,7 +8,10 @@ from typing import List, Dict
 import random
 import json
 from datetime import datetime
+import time
 
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 from data.database.models.population_models import (
     Population, Chromosome, ChromosomeGene, EvolutionHistory
 )
@@ -18,21 +21,50 @@ from cli.logger.log_manager import get_logger
 # Setup logger
 logger = get_logger('mutation_manager')
 
+# Configurazione retry
+MAX_RETRIES = 5
+RETRY_DELAY = 2.0
+MAX_BACKOFF = 10.0
+
+def retry_on_db_lock(func):
+    """Decorator per gestire i database lock con retry e backoff esponenziale."""
+    def wrapper(*args, **kwargs):
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except OperationalError as e:
+                if "database is locked" in str(e):
+                    last_error = e
+                    delay = min(RETRY_DELAY * (2 ** attempt) + random.random(), MAX_BACKOFF)
+                    logger.warning(f"Database locked, retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                raise
+        logger.error(f"Max retries ({MAX_RETRIES}) raggiunti per database lock")
+        raise last_error
+    return wrapper
+
 class MutationManager(PopulationBaseManager):
     """Gestisce le mutazioni dei cromosomi."""
     
-    def mutate_population(self, population: Population, chromosomes: List[Chromosome]) -> List[Chromosome]:
+    @retry_on_db_lock
+    def mutate_population(self, population: Population, chromosomes: List[Chromosome], session: Session) -> List[Chromosome]:
         """
         Applica mutazioni a una lista di cromosomi.
         
         Args:
             population: Popolazione di appartenenza
             chromosomes: Lista di cromosomi da mutare
+            session: Sessione database attiva
             
         Returns:
             List[Chromosome]: Cromosomi mutati
         """
         try:
+            # Ricarica popolazione nella sessione corrente
+            population = session.merge(population)
+            
             mutation_stats = {
                 "total": len(chromosomes),
                 "mutated": 0,
@@ -41,20 +73,31 @@ class MutationManager(PopulationBaseManager):
                 "parameter_mutations": 0
             }
             
-            for chromosome in chromosomes:
-                if random.random() < population.mutation_rate:
-                    self._mutate_chromosome(chromosome)
-                    mutation_stats["mutated"] += 1
+            # Processa cromosomi in batch
+            batch_size = 50
+            for i in range(0, len(chromosomes), batch_size):
+                batch = chromosomes[i:i + batch_size]
+                
+                for chromosome in batch:
+                    # Merge del cromosoma nella sessione corrente
+                    chromosome = session.merge(chromosome)
                     
-                    # Aggiorna statistiche
-                    mutation_stats["gene_mutations"] += len(chromosome.genes)
-                    mutation_stats["weight_mutations"] += sum(
-                        1 for g in chromosome.genes if g.last_mutation_date
-                    )
-                    mutation_stats["parameter_mutations"] += sum(
-                        1 for g in chromosome.genes 
-                        if g.mutation_history and json.loads(g.mutation_history)
-                    )
+                    if random.random() < population.mutation_rate:
+                        self._mutate_chromosome(chromosome, session)
+                        mutation_stats["mutated"] += 1
+                        
+                        # Aggiorna statistiche
+                        mutation_stats["gene_mutations"] += len(chromosome.genes)
+                        mutation_stats["weight_mutations"] += sum(
+                            1 for g in chromosome.genes if g.last_mutation_date
+                        )
+                        mutation_stats["parameter_mutations"] += sum(
+                            1 for g in chromosome.genes 
+                            if g.mutation_history and json.loads(g.mutation_history)
+                        )
+                
+                # Commit intermedio dopo ogni batch
+                session.commit()
             
             # Log mutazioni
             logger.info(
@@ -63,7 +106,7 @@ class MutationManager(PopulationBaseManager):
             )
             
             # Aggiorna statistiche popolazione
-            self._update_mutation_stats(population, mutation_stats)
+            self._update_mutation_stats(population, mutation_stats, session)
             
             return chromosomes
             
@@ -71,12 +114,13 @@ class MutationManager(PopulationBaseManager):
             logger.error(f"Errore mutazione popolazione: {str(e)}")
             raise
             
-    def _mutate_chromosome(self, chromosome: Chromosome) -> None:
+    def _mutate_chromosome(self, chromosome: Chromosome, session: Session) -> None:
         """
         Applica mutazioni a un singolo cromosoma.
         
         Args:
             chromosome: Cromosoma da mutare
+            session: Sessione database attiva
         """
         # Decidi tipo di mutazione
         mutation_type = random.choice([
@@ -87,9 +131,9 @@ class MutationManager(PopulationBaseManager):
         ])
         
         if mutation_type == 'add_gene':
-            self._add_random_gene(chromosome)
+            self._add_random_gene(chromosome, session)
         elif mutation_type == 'remove_gene':
-            self._remove_random_gene(chromosome)
+            self._remove_random_gene(chromosome, session)
         elif mutation_type == 'modify_weights':
             self._mutate_weights(chromosome)
         else:
@@ -99,12 +143,13 @@ class MutationManager(PopulationBaseManager):
         for gene in chromosome.genes:
             gene.last_mutation_date = datetime.now()
             
-    def _add_random_gene(self, chromosome: Chromosome) -> None:
+    def _add_random_gene(self, chromosome: Chromosome, session: Session) -> None:
         """
         Aggiunge un nuovo gene casuale al cromosoma.
         
         Args:
             chromosome: Cromosoma da modificare
+            session: Sessione database attiva
         """
         # Lista geni disponibili
         available_genes = set(self.config['gene'].keys()) - \
@@ -115,6 +160,7 @@ class MutationManager(PopulationBaseManager):
             
             # Crea nuovo gene
             new_gene = ChromosomeGene(
+                chromosome_id=chromosome.chromosome_id,
                 gene_type=gene_type,
                 parameters=self._generate_random_parameters(gene_type),
                 weight=random.random(),
@@ -122,18 +168,21 @@ class MutationManager(PopulationBaseManager):
                 mutation_history=json.dumps({"added": datetime.now().isoformat()})
             )
             
-            chromosome.genes.append(new_gene)
+            session.add(new_gene)
+            session.flush()
             
-    def _remove_random_gene(self, chromosome: Chromosome) -> None:
+    def _remove_random_gene(self, chromosome: Chromosome, session: Session) -> None:
         """
         Rimuove un gene casuale dal cromosoma.
         
         Args:
             chromosome: Cromosoma da modificare
+            session: Sessione database attiva
         """
         if chromosome.genes:
             gene = random.choice(chromosome.genes)
-            chromosome.genes.remove(gene)
+            session.delete(gene)
+            session.flush()
             
     def _mutate_weights(self, chromosome: Chromosome) -> None:
         """
@@ -219,15 +268,17 @@ class MutationManager(PopulationBaseManager):
                 
         return json.dumps(params)
         
-    def _update_mutation_stats(self, population: Population, stats: Dict) -> None:
+    @retry_on_db_lock
+    def _update_mutation_stats(self, population: Population, stats: Dict, session: Session) -> None:
         """
         Aggiorna statistiche mutazione nella storia evolutiva.
         
         Args:
             population: Popolazione
             stats: Statistiche mutazioni
+            session: Sessione database attiva
         """
-        history = self.session.query(EvolutionHistory)\
+        history = session.query(EvolutionHistory)\
             .filter_by(
                 population_id=population.population_id,
                 generation=population.current_generation
@@ -235,4 +286,4 @@ class MutationManager(PopulationBaseManager):
             
         if history:
             history.mutation_stats = json.dumps(stats)
-            self.session.commit()
+            session.flush()

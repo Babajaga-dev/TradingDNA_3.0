@@ -1,3 +1,20 @@
 security:
   backup_interval: 86400
   enable_backup: true
+
+database:
+  url: "postgresql://postgres:ninja@localhost:5432/tradingdna"  # URL PostgreSQL con password corretta
+  pool_size: 20  # Aumentato per supportare più connessioni concorrenti
+  max_overflow: 30  # Aumentato per gestire picchi di carico
+  pool_timeout: 60
+  pool_recycle: 3600
+  echo: false  # Set to true for SQL query logging
+  isolation_level: "READ COMMITTED"  # Livello di isolamento ottimale per PostgreSQL
+  connect_args:
+    application_name: "TradingDNA"  # Identificativo dell'applicazione
+    client_encoding: "utf8"
+    options: "-c timezone=UTC"  # Imposta timezone UTC
+  pool_pre_ping: true  # Verifica connessione prima dell'uso
+  use_native_unicode: true
+  json_serializer: null  # Usa il serializzatore JSON nativo di PostgreSQL
+  native_json: true  # Abilita supporto nativo JSON

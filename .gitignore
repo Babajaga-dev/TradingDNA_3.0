@@ -2,10 +2,14 @@
 __pycache__/
 *.py[cod]
 *$py.class
-logs/
 *.db*
-/data/gene_tests/
-/test_reports/
+
+##############################################
+data/gene_tests/
+test_reports/
+logs/
+##############################################
+
 
 # C extensions
 *.so

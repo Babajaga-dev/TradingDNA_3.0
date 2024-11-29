@@ -6,14 +6,17 @@ Script per verificare gli exchange nel database.
 
 import asyncio
 from sqlalchemy import text
-from data.database.models import get_session
+from data.database.session_manager import DBSessionManager
+
+# Ottieni l'istanza del session manager
+db = DBSessionManager()
 
 async def check_exchanges():
     """Verifica gli exchange nel database."""
-    async with get_session() as session:
+    async with db.async_session() as session:
         # Controlla gli exchange
         result = await session.execute(text("SELECT id, name, is_active FROM exchanges"))
-        rows = result.fetchall()
+        rows = result.all()
         
         print("\nExchanges nel database:")
         print("------------------------")
@@ -22,7 +25,7 @@ async def check_exchanges():
         
         # Controlla i simboli
         result = await session.execute(text("SELECT id, exchange_id, name FROM symbols"))
-        rows = result.fetchall()
+        rows = result.all()
         
         print("\nSimboli nel database:")
         print("---------------------")

@@ -12,7 +12,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Prompt
 from data.database.models.models import (
-    get_session, Symbol, MarketData
+    Symbol, MarketData
 )
 from ..genes import (
     RSIGene, MovingAverageGene, MACDGene, BollingerGene,
@@ -34,37 +34,35 @@ class GeneManagerAnalytics(GeneManagerBase):
         if not self.check_database_data():
             return []
             
-        session = get_session()
         try:
-            # Query diretta con group by
-            results = session.query(Symbol.name, MarketData.timeframe)\
-                .join(MarketData)\
-                .filter(MarketData.is_valid == True)\
-                .group_by(Symbol.name, MarketData.timeframe)\
-                .order_by(Symbol.name, MarketData.timeframe)\
-                .all()
-            
-            self.logger.info(f"Coppie/timeframe trovati: {results}")
-            
-            if not results:
-                self.console.print(Panel(
-                    "[red]Nessuna coppia/timeframe trovata![/red]\n\n"
-                    "[yellow]Per utilizzare il sistema è necessario:[/yellow]\n"
-                    "1. Selezionare 'Scarica Dati Storici' dal menu principale\n"
-                    "2. Scegliere le coppie di trading da scaricare\n"
-                    "3. Selezionare il timeframe desiderato\n"
-                    "4. Attendere il completamento del download",
-                    title="Attenzione",
-                    border_style="red"
-                ))
-                input("\nPremi INVIO per continuare...")
+            with self.db.session() as session:
+                # Query diretta con group by
+                results = session.query(Symbol.name, MarketData.timeframe)\
+                    .join(MarketData)\
+                    .filter(MarketData.is_valid == True)\
+                    .group_by(Symbol.name, MarketData.timeframe)\
+                    .order_by(Symbol.name, MarketData.timeframe)\
+                    .all()
                 
-            return results
+                self.logger.info(f"Coppie/timeframe trovati: {results}")
+                
+                if not results:
+                    self.console.print(Panel(
+                        "[red]Nessuna coppia/timeframe trovata![/red]\n\n"
+                        "[yellow]Per utilizzare il sistema è necessario:[/yellow]\n"
+                        "1. Selezionare 'Scarica Dati Storici' dal menu principale\n"
+                        "2. Scegliere le coppie di trading da scaricare\n"
+                        "3. Selezionare il timeframe desiderato\n"
+                        "4. Attendere il completamento del download",
+                        title="Attenzione",
+                        border_style="red"
+                    ))
+                    input("\nPremi INVIO per continuare...")
+                    
+                return results
         except Exception as e:
             self.logger.error(f"Errore nel recupero delle coppie/timeframe: {str(e)}")
             return []
-        finally:
-            session.close()
 
     def get_historical_data(self, pair: str, timeframe: str, days: int) -> np.ndarray:
         """
@@ -78,28 +76,26 @@ class GeneManagerAnalytics(GeneManagerBase):
         Returns:
             Array numpy con i dati OHLC
         """
-        session = get_session()
         try:
-            # Query più sicura con join esplicito e ordinamento ascendente
-            data = session.query(MarketData)\
-                .join(Symbol, Symbol.id == MarketData.symbol_id)\
-                .filter(Symbol.name == pair)\
-                .filter(MarketData.timeframe == timeframe)\
-                .order_by(MarketData.timestamp.asc())\
-                .limit(days)\
-                .all()
-                
-            if not data:
-                self.console.print(f"[red]Nessun dato trovato per {pair} ({timeframe})[/red]")
-                return np.array([])
-                
-            # Restituisce array OHLC completo
-            return np.array([[d.open, d.high, d.low, d.close, d.volume] for d in data])
+            with self.db.session() as session:
+                # Query più sicura con join esplicito e ordinamento ascendente
+                data = session.query(MarketData)\
+                    .join(Symbol, Symbol.id == MarketData.symbol_id)\
+                    .filter(Symbol.name == pair)\
+                    .filter(MarketData.timeframe == timeframe)\
+                    .order_by(MarketData.timestamp.asc())\
+                    .limit(days)\
+                    .all()
+                    
+                if not data:
+                    self.console.print(f"[red]Nessun dato trovato per {pair} ({timeframe})[/red]")
+                    return np.array([])
+                    
+                # Restituisce array OHLC completo
+                return np.array([[d.open, d.high, d.low, d.close, d.volume] for d in data])
         except Exception as e:
             self.logger.error(f"Errore nel recupero dei dati storici: {str(e)}")
             return np.array([])
-        finally:
-            session.close()
 
     def evaluate_performance(self, stats: Dict[str, float]) -> str:
         """

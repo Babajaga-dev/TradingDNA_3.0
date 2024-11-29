@@ -9,7 +9,10 @@ import random
 import numpy as np
 from datetime import datetime
 import json
+import time
 
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 from data.database.models.population_models import (
     Population, Chromosome, ChromosomeGene, EvolutionHistory
 )
@@ -19,23 +22,56 @@ from cli.logger.log_manager import get_logger
 # Setup logger
 logger = get_logger('selection_manager')
 
+# Configurazione retry
+MAX_RETRIES = 5
+RETRY_DELAY = 2.0
+MAX_BACKOFF = 10.0
+
+def retry_on_db_lock(func):
+    """Decorator per gestire i database lock con retry e backoff esponenziale."""
+    def wrapper(*args, **kwargs):
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except OperationalError as e:
+                if "database is locked" in str(e):
+                    last_error = e
+                    delay = min(RETRY_DELAY * (2 ** attempt) + random.random(), MAX_BACKOFF)
+                    logger.warning(f"Database locked, retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                raise
+        logger.error(f"Max retries ({MAX_RETRIES}) raggiunti per database lock")
+        raise last_error
+    return wrapper
+
 class SelectionManager(PopulationBaseManager):
     """Gestisce la selezione naturale dei cromosomi."""
     
-    def select_parents(self, population: Population, num_pairs: int) -> List[Tuple[Chromosome, Chromosome]]:
+    @retry_on_db_lock
+    def select_parents(self, population: Population, num_pairs: int, session: Session) -> List[Tuple[Chromosome, Chromosome]]:
         """
         Seleziona coppie di cromosomi per la riproduzione usando tournament selection.
         
         Args:
             population: Popolazione da cui selezionare
             num_pairs: Numero di coppie da selezionare
+            session: Sessione database attiva
             
         Returns:
             List[Tuple[Chromosome, Chromosome]]: Lista di coppie di cromosomi
         """
         try:
+            # Ricarica popolazione nella sessione corrente
+            population = session.merge(population)
+            
             # Ottieni cromosomi attivi
-            active_chromosomes = [c for c in population.chromosomes if c.status == 'active']
+            active_chromosomes = []
+            for chromosome in population.chromosomes:
+                if chromosome.status == 'active':
+                    active_chromosomes.append(chromosome)
+                    
             if len(active_chromosomes) < 2:
                 raise ValueError("Non ci sono abbastanza cromosomi attivi")
                 
@@ -61,21 +97,36 @@ class SelectionManager(PopulationBaseManager):
             logger.error(f"Errore selezione genitori: {str(e)}")
             raise
             
-    def select_survivors(self, population: Population, offspring: List[Chromosome]) -> List[Chromosome]:
+    @retry_on_db_lock
+    def select_survivors(self, population: Population, offspring: List[Chromosome], session: Session) -> List[Chromosome]:
         """
         Seleziona i cromosomi che sopravviveranno alla prossima generazione.
         
         Args:
             population: Popolazione corrente
             offspring: Nuovi cromosomi generati
+            session: Sessione database attiva
             
         Returns:
             List[Chromosome]: Cromosomi selezionati
         """
         try:
+            # Ricarica popolazione nella sessione corrente
+            population = session.merge(population)
+            
             # Unisci cromosomi esistenti e nuovi
-            all_chromosomes = [c for c in population.chromosomes if c.status == 'active']
-            all_chromosomes.extend(offspring)
+            all_chromosomes = []
+            
+            # Aggiungi cromosomi esistenti
+            for chromosome in population.chromosomes:
+                if chromosome.status == 'active':
+                    all_chromosomes.append(chromosome)
+            
+            # Aggiungi nuovi cromosomi
+            for chromosome in offspring:
+                if chromosome:
+                    merged_chromosome = session.merge(chromosome)
+                    all_chromosomes.append(merged_chromosome)
             
             # Ordina per fitness
             all_chromosomes.sort(
@@ -91,8 +142,8 @@ class SelectionManager(PopulationBaseManager):
                 "total_evaluated": len(all_chromosomes),
                 "survivors": len(survivors),
                 "avg_fitness": np.mean([self._get_fitness(c) for c in survivors]),
-                "best_fitness": self._get_fitness(survivors[0]),
-                "worst_fitness": self._get_fitness(survivors[-1])
+                "best_fitness": self._get_fitness(survivors[0]) if survivors else 0.0,
+                "worst_fitness": self._get_fitness(survivors[-1]) if survivors else 0.0
             }
             
             # Salva storia
@@ -106,8 +157,7 @@ class SelectionManager(PopulationBaseManager):
                 selection_stats=json.dumps(stats)
             )
             
-            self.session.add(history)
-            # Rimuovo il commit per lasciare la gestione della transazione al chiamante
+            session.add(history)
             
             # Log selezione
             logger.info(
@@ -148,11 +198,14 @@ class SelectionManager(PopulationBaseManager):
         Returns:
             float: Valore fitness
         """
-        if not chromosome.performance_metrics:
+        if not chromosome or not chromosome.performance_metrics:
             return 0.0
             
-        metrics = json.loads(chromosome.performance_metrics)
-        return float(metrics.get('fitness', 0.0))
+        try:
+            metrics = json.loads(chromosome.performance_metrics)
+            return float(metrics.get('fitness', 0.0))
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            return 0.0
         
     def _calculate_diversity(self, chromosomes: List[Chromosome]) -> float:
         """
@@ -170,7 +223,11 @@ class SelectionManager(PopulationBaseManager):
         # Calcola distanza media tra fingerprint
         distances = []
         for i, c1 in enumerate(chromosomes):
+            if not c1 or not c1.fingerprint:
+                continue
             for c2 in chromosomes[i+1:]:
+                if not c2 or not c2.fingerprint:
+                    continue
                 distance = self._hamming_distance(c1.fingerprint, c2.fingerprint)
                 distances.append(distance)
                 
@@ -187,7 +244,7 @@ class SelectionManager(PopulationBaseManager):
         Returns:
             float: Distanza normalizzata (0-1)
         """
-        if len(s1) != len(s2):
+        if not s1 or not s2 or len(s1) != len(s2):
             return 1.0
             
         differences = sum(c1 != c2 for c1, c2 in zip(s1, s2))

@@ -9,7 +9,10 @@ import random
 import json
 import hashlib
 from datetime import datetime
+import time
 
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 from data.database.models.population_models import (
     Population, Chromosome, ChromosomeGene
 )
@@ -19,21 +22,51 @@ from cli.logger.log_manager import get_logger
 # Setup logger
 logger = get_logger('reproduction_manager')
 
+# Configurazione retry
+MAX_RETRIES = 5
+RETRY_DELAY = 2.0
+MAX_BACKOFF = 10.0
+
+def retry_on_db_lock(func):
+    """Decorator per gestire i database lock con retry e backoff esponenziale."""
+    def wrapper(*args, **kwargs):
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except OperationalError as e:
+                if "database is locked" in str(e):
+                    last_error = e
+                    delay = min(RETRY_DELAY * (2 ** attempt) + random.random(), MAX_BACKOFF)
+                    logger.warning(f"Database locked, retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                raise
+        logger.error(f"Max retries ({MAX_RETRIES}) raggiunti per database lock")
+        raise last_error
+    return wrapper
+
 class ReproductionManager(PopulationBaseManager):
     """Gestisce la riproduzione tra cromosomi."""
     
-    def reproduce(self, parent1: Chromosome, parent2: Chromosome) -> Chromosome:
+    @retry_on_db_lock
+    def reproduce(self, parent1: Chromosome, parent2: Chromosome, session: Session) -> Chromosome:
         """
         Crea un nuovo cromosoma attraverso il crossover di due genitori.
         
         Args:
             parent1: Primo genitore
             parent2: Secondo genitore
+            session: Sessione database attiva
             
         Returns:
             Chromosome: Nuovo cromosoma
         """
         try:
+            # Ricarica genitori nella sessione corrente
+            parent1 = session.merge(parent1)
+            parent2 = session.merge(parent2)
+            
             # Crea nuovo cromosoma
             child = Chromosome(
                 population_id=parent1.population_id,
@@ -62,6 +95,10 @@ class ReproductionManager(PopulationBaseManager):
             # Aggiungi geni
             child.genes = child_genes
             
+            # Aggiungi alla sessione
+            session.add(child)
+            session.flush()
+            
             # Log riproduzione
             logger.info(
                 f"Creato nuovo cromosoma da genitori "
@@ -74,12 +111,14 @@ class ReproductionManager(PopulationBaseManager):
             logger.error(f"Errore riproduzione: {str(e)}")
             raise
             
-    def reproduce_batch(self, pairs: List[Tuple[Chromosome, Chromosome]]) -> List[Chromosome]:
+    @retry_on_db_lock
+    def reproduce_batch(self, pairs: List[Tuple[Chromosome, Chromosome]], session: Session) -> List[Chromosome]:
         """
         Crea nuovi cromosomi da una lista di coppie.
         
         Args:
             pairs: Lista di coppie di genitori
+            session: Sessione database attiva
             
         Returns:
             List[Chromosome]: Nuovi cromosomi
@@ -89,10 +128,14 @@ class ReproductionManager(PopulationBaseManager):
             
             for parent1, parent2 in pairs:
                 # Crea due figli per coppia
-                child1 = self.reproduce(parent1, parent2)
-                child2 = self.reproduce(parent2, parent1)
+                child1 = self.reproduce(parent1, parent2, session)
+                child2 = self.reproduce(parent2, parent1, session)
                 
                 offspring.extend([child1, child2])
+                
+                # Commit intermedio ogni 10 coppie
+                if len(offspring) % 20 == 0:
+                    session.commit()
                 
             # Log batch
             logger.info(f"Creati {len(offspring)} nuovi cromosomi")
@@ -147,7 +190,9 @@ class ReproductionManager(PopulationBaseManager):
                         source.weight,
                         other.weight if other else None
                     ),
-                    is_active=source.is_active
+                    is_active=source.is_active,
+                    mutation_history=json.dumps({}),
+                    validation_rules=source.validation_rules
                 )
                 
                 child_genes.append(new_gene)

@@ -1,42 +1,62 @@
 """
 Test Database Initializer
 ----------------------
-Inizializzazione del database per i test del sistema di evoluzione.
+Inizializzazione del database per i test.
 """
 
 from typing import Dict, List
 import yaml
-from datetime import datetime, timedelta
+import time
+import random
 import numpy as np
-from contextlib import contextmanager
-
+from datetime import datetime, timedelta
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+from data.database.session_manager import DBSessionManager
 from data.database.models.models import (
-    get_session, reset_database,
-    Exchange, Symbol, MarketData
+    initialize_database, reset_database, MarketData,
+    Exchange, Symbol
 )
 from cli.logger.log_manager import get_logger
 
 # Setup logger
-logger = get_logger('test_db_initializer')
+logger = get_logger('test_db_init')
+
+# Configurazione retry
+MAX_RETRIES = 3
+RETRY_DELAY = 1.0
+MAX_BACKOFF = 5.0
+
+def retry_on_db_lock(func):
+    """Decorator per gestire i database lock con retry e backoff esponenziale."""
+    def wrapper(*args, **kwargs):
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                print(f"[DEBUG] Tentativo {attempt+1}/{MAX_RETRIES} di esecuzione {func.__name__}")
+                return func(*args, **kwargs)
+            except OperationalError as e:
+                if "database is locked" in str(e):
+                    last_error = e
+                    delay = min(RETRY_DELAY * (2 ** attempt) + random.random(), MAX_BACKOFF)
+                    print(f"[DEBUG] Database LOCKED in {func.__name__}! Retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                    logger.warning(f"Database locked, retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                raise
+        print(f"[DEBUG] MAX RETRY RAGGIUNTI per {func.__name__}! Ultimo errore: {str(last_error)}")
+        logger.error(f"Max retries ({MAX_RETRIES}) raggiunti per database lock")
+        raise last_error
+    return wrapper
 
 class TestDatabaseInitializer:
     """Inizializza il database per i test."""
     
     def __init__(self):
         """Inizializza il database initializer."""
-        self.session = get_session()
+        self.db = DBSessionManager()
         self.test_config = self._load_test_config()
         
-    @contextmanager
-    def transaction(self):
-        """Context manager per gestire le transazioni."""
-        try:
-            yield
-            self.session.commit()
-        except Exception as e:
-            self.session.rollback()
-            raise e
-            
     def _load_test_config(self) -> Dict:
         """
         Carica la configurazione dei test.
@@ -45,147 +65,182 @@ class TestDatabaseInitializer:
             Dict: Configurazione test
         """
         try:
+            print("[DEBUG] Caricamento configurazione test")
             with open('config/test.yaml', 'r') as f:
                 config = yaml.safe_load(f)
+            print("[DEBUG] Configurazione test caricata")
             return config['evolution_test']
         except Exception as e:
+            print(f"[DEBUG] ERRORE caricamento config: {str(e)}")
             logger.error(f"Errore caricamento configurazione test: {str(e)}")
             raise
-            
+        
+    @retry_on_db_lock
     def initialize(self) -> str:
         """
         Inizializza il database per i test.
         
         Returns:
-            str: Messaggio di conferma o errore
+            str: Messaggio di stato
         """
         try:
-            with self.transaction():
-                logger.info("Inizializzazione database test")
-                
-                # Resetta database
+            print("[DEBUG] Inizio inizializzazione database test")
+            with self.db.session() as session:
+                # Prima resetta il database
+                print("[DEBUG] Reset database...")
                 reset_database()
                 
-                # Crea exchange
+                # Poi ricrea le tabelle
+                print("[DEBUG] Creazione tabelle...")
+                initialize_database()
+                
+                # Verifica che il database sia vuoto e pronto
+                result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+                tables = result.fetchall()
+                
+                if not tables:
+                    return "Errore: Nessuna tabella creata"
+                
+                # Crea exchange e symbol di test
+                print("[DEBUG] Creazione exchange e symbol di test...")
                 exchange = Exchange(
                     name='binance',
-                    is_active=True,
-                    created_at=datetime.now(),
-                    updated_at=datetime.now()
+                    is_active=True
                 )
-                self.session.add(exchange)
-                self.session.flush()
+                session.add(exchange)
+                session.flush()
                 
-                # Crea symbol
                 symbol = Symbol(
-                    exchange_id=exchange.id,
                     name='BTCUSDT',
                     base_asset='BTC',
                     quote_asset='USDT',
-                    is_active=True,
-                    created_at=datetime.now(),
-                    updated_at=datetime.now()
+                    exchange_id=exchange.id,
+                    is_active=True
                 )
-                self.session.add(symbol)
-                self.session.flush()
+                session.add(symbol)
+                session.flush()
                 
-                # Genera e inserisci dati di test in batch
-                self._generate_test_data(exchange.id, symbol.id)
+                # Genera dati di mercato di test
+                print("[DEBUG] Generazione dati di mercato di test...")
+                self._generate_test_data(exchange.id, symbol.id, session)
                 
-                logger.info("Database test inizializzato con successo")
+                # Commit finale
+                print("[DEBUG] Commit finale...")
+                session.commit()
+                
+                print("[DEBUG] Database test inizializzato con successo")
+                logger.info(f"Database inizializzato con {len(tables)} tabelle e dati di test")
                 return "Database test inizializzato con successo"
                 
         except Exception as e:
-            logger.error(f"Errore inizializzazione database test: {str(e)}")
-            return f"Errore inizializzazione database test: {str(e)}"
-            
-    def _generate_test_data(self, exchange_id: int, symbol_id: int) -> None:
+            error_msg = f"Errore inizializzazione database: {str(e)}"
+            print(f"[DEBUG] {error_msg}")
+            logger.error(error_msg)
+            return error_msg
+    
+    def _generate_test_data(self, exchange_id: int, symbol_id: int, session) -> None:
         """
         Genera dati di mercato sintetici per il test.
         
         Args:
             exchange_id: ID exchange
             symbol_id: ID symbol
+            session: Sessione database attiva
         """
-        logger.info("Generazione dati di mercato sintetici")
-        
-        # Parametri generazione
-        days = self.test_config['test_days']
-        timeframe = self.test_config['test_timeframe']
-        
-        # Calcola numero candele
-        candles_per_day = self._get_candles_per_day(timeframe)
-        total_candles = days * candles_per_day
-        
-        # Genera prezzi random walk
-        price = 50000.0  # Prezzo iniziale BTC
-        volatility = 0.02  # Volatilità giornaliera
-        prices = []
-        
-        for _ in range(total_candles):
-            # Random walk con drift
-            change = np.random.normal(0, volatility) * price
-            price += change
-            prices.append(price)
+        try:
+            print("[DEBUG] Inizio generazione dati di mercato sintetici")
             
-        # Genera candele
-        end_time = datetime.now()
-        start_time = end_time - timedelta(days=days)
-        interval = self._get_timeframe_interval(timeframe)
-        
-        # Prepara batch di candele
-        batch_size = 1000
-        candles_batch = []
-        
-        for i in range(total_candles):
-            timestamp = start_time + i * interval
-            price = prices[i]
+            # Parametri generazione
+            days = self.test_config['test_days']
+            timeframe = self.test_config['test_timeframe']
             
-            # Genera OHLCV
-            high = price * (1 + abs(np.random.normal(0, 0.005)))
-            low = price * (1 - abs(np.random.normal(0, 0.005)))
-            volume = abs(np.random.normal(100, 30))
+            print(f"[DEBUG] Generazione {days} giorni di dati con timeframe {timeframe}")
             
-            candle = MarketData(
-                exchange_id=exchange_id,
-                symbol_id=symbol_id,
-                timeframe=timeframe,
-                timestamp=timestamp,
-                open=prices[i-1] if i > 0 else price,
-                high=high,
-                low=low,
-                close=price,
-                volume=volume,
-                is_valid=True
-            )
+            # Calcola numero candele
+            candles_per_day = self._get_candles_per_day(timeframe)
+            total_candles = days * candles_per_day
+            print(f"[DEBUG] Generazione {total_candles} candele ({candles_per_day} candele/giorno)")
             
-            candles_batch.append(candle)
+            # Genera prezzi random walk
+            price = 50000.0  # Prezzo iniziale BTC
+            volatility = 0.02  # Volatilità giornaliera
             
-            # Inserisci batch quando raggiunge la dimensione massima
-            if len(candles_batch) >= batch_size:
-                self._insert_candles_batch(candles_batch)
-                candles_batch = []
+            # Genera candele
+            end_time = datetime.now()
+            start_time = end_time - timedelta(days=days)
+            interval = self._get_timeframe_interval(timeframe)
+            
+            # Prepara batch di candele
+            batch_size = 100  # Ridotto per evitare problemi di memoria
+            candles_batch = []
+            last_price = price
+            
+            for i in range(total_candles):
+                timestamp = start_time + i * interval
                 
-        # Inserisci eventuali candele rimanenti
-        if candles_batch:
-            self._insert_candles_batch(candles_batch)
+                # Random walk con drift
+                change = np.random.normal(0, volatility) * last_price
+                price = last_price + change
+                
+                # Genera OHLCV
+                high = price * (1 + abs(np.random.normal(0, 0.005)))
+                low = price * (1 - abs(np.random.normal(0, 0.005)))
+                volume = abs(np.random.normal(100, 30))
+                
+                candle = MarketData(
+                    exchange_id=exchange_id,
+                    symbol_id=symbol_id,
+                    timeframe=timeframe,
+                    timestamp=timestamp,
+                    open=last_price,
+                    high=high,
+                    low=low,
+                    close=price,
+                    volume=volume,
+                    is_valid=True
+                )
+                
+                candles_batch.append(candle)
+                last_price = price
+                
+                # Inserisci batch quando raggiunge la dimensione massima
+                if len(candles_batch) >= batch_size:
+                    print(f"[DEBUG] Inserimento batch di {len(candles_batch)} candele...")
+                    self._insert_candles_batch(candles_batch, session)
+                    candles_batch = []
+                    session.flush()
+                    
+            # Inserisci eventuali candele rimanenti
+            if candles_batch:
+                print(f"[DEBUG] Inserimento batch finale di {len(candles_batch)} candele...")
+                self._insert_candles_batch(candles_batch, session)
+                session.flush()
+                
+            print(f"[DEBUG] Generati {total_candles} candele di test")
+            logger.info(f"Generati {total_candles} candele di test")
             
-        logger.info(f"Generati {total_candles} candele di test")
-        
-    def _insert_candles_batch(self, candles: List[MarketData]) -> None:
+        except Exception as e:
+            print(f"[DEBUG] ERRORE generazione dati test: {str(e)}")
+            logger.error(f"Errore generazione dati test: {str(e)}")
+            raise
+    
+    @retry_on_db_lock
+    def _insert_candles_batch(self, candles: List[MarketData], session) -> None:
         """
         Inserisce un batch di candele nel database.
         
         Args:
             candles: Lista di candele da inserire
+            session: Sessione database attiva
         """
         try:
-            self.session.bulk_save_objects(candles)
-            self.session.flush()
+            session.bulk_save_objects(candles)
+            session.flush()
         except Exception as e:
+            print(f"[DEBUG] ERRORE inserimento batch candele: {str(e)}")
             logger.error(f"Errore inserimento batch candele: {str(e)}")
             raise
-        
+    
     def _get_candles_per_day(self, timeframe: str) -> int:
         """
         Calcola il numero di candele per giorno.
@@ -206,7 +261,7 @@ class TestDatabaseInitializer:
         }
         minutes_per_day = 24 * 60
         return minutes_per_day // timeframe_minutes[timeframe]
-        
+    
     def _get_timeframe_interval(self, timeframe: str) -> timedelta:
         """
         Converte il timeframe in timedelta.

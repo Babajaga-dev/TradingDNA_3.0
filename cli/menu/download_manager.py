@@ -14,7 +14,6 @@ from rich.table import Table
 from rich.live import Live
 
 from data.collection.downloader import DataDownloader, DownloadConfig, DownloadStats
-from data.database.models import get_session
 from cli.config import get_config_loader
 
 class DownloadManager:
@@ -255,9 +254,8 @@ class DownloadManager:
         )
         
         # Esegue download
-        session = get_session()
         try:
-            downloader = DataDownloader(session, download_config)
+            downloader = DataDownloader(download_config)
             
             with Live(progress, refresh_per_second=10):
                 self.progress = progress
@@ -281,8 +279,8 @@ class DownloadManager:
                 finally:
                     self.progress = None
                     self.task_id = None
-        finally:
-            session.close()
+        except Exception as e:
+            self.console.print(f"\n[red]Errore durante il download: {str(e)}[/red]")
         
     def _show_stats(self, stats: DownloadStats) -> None:
         """

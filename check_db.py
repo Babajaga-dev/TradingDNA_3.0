@@ -5,24 +5,19 @@ Verifica e inizializza il database se necessario.
 """
 
 import asyncio
-from sqlalchemy import create_engine, inspect, text, delete
-from data.database.models import (
-    initialize_database,
-    engine as async_engine,
-    get_session,
-    Exchange,
-    Symbol,
-    MarketData,
-    SYNC_DATABASE_URL
-)
+from sqlalchemy import text, inspect
+from data.database.session_manager import DBSessionManager
+from data.database.models.models import initialize_database
+
+# Ottieni l'istanza del session manager
+db = DBSessionManager()
 
 def check_tables_sync():
     """Verifica la presenza e la struttura delle tabelle usando una connessione sincrona."""
     print("\nTabelle nel database:")
     
-    # Crea engine sincrono per l'ispezione
-    sync_engine = create_engine(SYNC_DATABASE_URL)
-    inspector = inspect(sync_engine)
+    # Usa l'engine sincrono per l'ispezione
+    inspector = inspect(db.engine)
     existing_tables = inspector.get_table_names()
     
     if not existing_tables:
@@ -40,7 +35,7 @@ def check_tables_sync():
 
 async def check_data():
     """Verifica i dati presenti nel database."""
-    async with get_session() as session:
+    async with db.async_session() as session:
         try:
             # Conta gli exchanges
             result = await session.execute(text("SELECT COUNT(*) FROM exchanges"))
@@ -65,7 +60,8 @@ async def check_data():
                 ORDER BY timeframe
             """))
             print("\nCandele per timeframe:")
-            for row in result:
+            rows = result.all()
+            for row in rows:
                 print(f"- {row[0]}: {row[1]} candele")
             
             # Mostra ultimi dati per ogni timeframe
@@ -92,7 +88,8 @@ async def check_data():
                 WHERE rn = 1
                 ORDER BY timeframe
             """))
-            for row in result:
+            rows = result.all()
+            for row in rows:
                 print(f"\n{row[0]} - {row[1]}:")
                 print(f"  Timestamp: {row[2]}")
                 print(f"  OHLCV: {row[3]}, {row[4]}, {row[5]}, {row[6]}, {row[7]}")
@@ -116,7 +113,7 @@ async def check_data():
 
 async def clean_old_data():
     """Elimina i dati vecchi per i timeframe 1h e 4h."""
-    async with get_session() as session:
+    async with db.async_session() as session:
         try:
             print("\nPulizia dati vecchi...")
             
@@ -128,7 +125,8 @@ async def clean_old_data():
                 GROUP BY timeframe
             """))
             print("Dati prima della pulizia:")
-            for row in result:
+            rows = result.all()
+            for row in rows:
                 print(f"- {row[0]}: {row[1]} candele")
             
             # Elimina dati 1h e 4h
@@ -146,7 +144,7 @@ async def clean_old_data():
                 GROUP BY timeframe
             """))
             print("\nDati dopo la pulizia:")
-            rows = result.fetchall()
+            rows = result.all()
             if not rows:
                 print("Nessun dato trovato per timeframe 1h e 4h")
             else:
@@ -157,7 +155,6 @@ async def clean_old_data():
             
         except Exception as e:
             print(f"Errore durante la pulizia dei dati: {str(e)}")
-            await session.rollback()
             raise
 
 async def main():

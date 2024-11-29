@@ -10,7 +10,11 @@ from datetime import datetime
 from pathlib import Path
 import yaml
 from contextlib import contextmanager
+import time
+import random
 
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 from data.database.models.population_models import (
     Population, Chromosome, ChromosomeGene, EvolutionHistory
 )
@@ -26,33 +30,51 @@ from .fitness_calculator import FitnessCalculator
 # Setup logger
 logger = get_logger('evolution_test')
 
+# Configurazione retry
+MAX_RETRIES = 5
+RETRY_DELAY = 2.0
+MAX_BACKOFF = 10.0
+
+def retry_on_db_lock(func):
+    """Decorator per gestire i database lock con retry e backoff esponenziale."""
+    def wrapper(*args, **kwargs):
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                print(f"[DEBUG] Tentativo {attempt+1}/{MAX_RETRIES} di esecuzione {func.__name__}")
+                return func(*args, **kwargs)
+            except OperationalError as e:
+                if "database is locked" in str(e):
+                    last_error = e
+                    delay = min(RETRY_DELAY * (2 ** attempt) + random.random(), MAX_BACKOFF)
+                    print(f"[DEBUG] Database LOCKED in {func.__name__}! Retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                    logger.warning(f"Database locked, retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                raise
+        print(f"[DEBUG] MAX RETRY RAGGIUNTI per {func.__name__}! Ultimo errore: {str(last_error)}")
+        logger.error(f"Max retries ({MAX_RETRIES}) raggiunti per database lock")
+        raise last_error
+    return wrapper
+
 class EvolutionTester(PopulationBaseManager):
     """Tester per il sistema di evoluzione."""
     
     def __init__(self):
         """Inizializza il tester."""
         super().__init__()
-        # Condividi la sessione del base manager
         self.evolution = EvolutionManager()
-        self.evolution.session = self.session
-        
         self.selection = SelectionManager()
-        self.selection.session = self.session
-        
         self.reproduction = ReproductionManager()
-        self.reproduction.session = self.session
-        
         self.mutation = MutationManager()
-        self.mutation.session = self.session
-        
         self.fitness = FitnessCalculator()
-        self.fitness.session = self.session
-    
+        
         # Carica configurazione test
         self.test_config = self._load_test_config()
         
         # Setup logger specifico per i test
         self.logger = get_logger('evolution_test')
+        print("[DEBUG] EvolutionTester inizializzato")
         
     def _load_test_config(self) -> Dict:
         """
@@ -68,90 +90,138 @@ class EvolutionTester(PopulationBaseManager):
         except Exception as e:
             self.logger.error(f"Errore caricamento configurazione test: {str(e)}")
             raise
-        
-    def run_test(self, population_id: int, generations: int = 5) -> str:
+
+    @retry_on_db_lock
+    def run_test(self, population_id: int, generations: int = 5, session: Optional[Session] = None) -> str:
         """
         Esegue un test completo del sistema di evoluzione.
         
         Args:
             population_id: ID della popolazione da testare
             generations: Numero di generazioni da evolvere
+            session: Sessione database opzionale
             
         Returns:
             str: Report del test
         """
         try:
-            # Verifica popolazione
-            population = self.get_population(population_id)
-            if not population:
-                return "Popolazione non trovata"
+            print(f"[DEBUG] Avvio run_test per popolazione {population_id}, generazioni {generations}")
+            # Se non viene fornita una sessione, ne crea una nuova
+            if session is None:
+                print("[DEBUG] Creazione nuova sessione database")
+                with self.session_scope() as session:
+                    return self._run_test_internal(population_id, generations, session)
+            else:
+                # Usa la sessione fornita
+                print("[DEBUG] Utilizzo sessione database esistente")
+                return self._run_test_internal(population_id, generations, session)
                 
-            logger.info(f"Inizio test evoluzione per popolazione {population.name}")
-            
-            # Test iniziale fitness
-            initial_stats = self.fitness.calculate_population_fitness(population)
-            
-            # Evolvi per N generazioni
-            evolution_stats = []
-            for i in range(generations):
-                logger.info(f"Evoluzione generazione {i+1}/{generations}")
-                
-                # Selezione genitori
-                parent_pairs = self.selection.select_parents(
-                    population,
-                    population.max_size // 2
-                )
-                
-                # Riproduzione
-                offspring = self.reproduction.reproduce_batch(parent_pairs)
-                
-                # Mutazione
-                mutated = self.mutation.mutate_population(population, offspring)
-                
-                # Calcolo fitness solo per cromosomi validi
-                for chromosome in mutated:
-                    if chromosome and chromosome.population_id:
-                        self.fitness.calculate_chromosome_fitness(chromosome)
-                
-                # Selezione sopravvissuti
-                valid_mutated = [c for c in mutated if c and c.population_id]
-                survivors = self.selection.select_survivors(population, valid_mutated)
-                
-                # Calcola statistiche
-                gen_stats = self._calculate_generation_stats(survivors)
-                evolution_stats.append(gen_stats)
-                
-                # Aggiorna popolazione
-                self._update_population(population, survivors)
-                
-                # Commit dopo ogni generazione
-                try:
-                    self.session.commit()
-                except:
-                    self.session.rollback()
-                    raise
-            
-            # Test finale fitness
-            final_stats = self.fitness.calculate_population_fitness(population)
-            
-            # Genera report
-            report = self._generate_test_report(
-                population,
-                initial_stats,
-                evolution_stats,
-                final_stats
-            )
-            
-            # Salva report
-            self._save_report(population, report)
-            
-            logger.info("Test evoluzione completato")
-            return report
-            
         except Exception as e:
+            print(f"[DEBUG] ERRORE in run_test: {str(e)}")
             logger.error(f"Errore test evoluzione: {str(e)}")
-            self.session.rollback()
-            return f"Errore test evoluzione: {str(e)}"
+            raise
+
+    def _run_test_internal(self, population_id: int, generations: int, session: Session) -> str:
+        """
+        Implementazione interna del test di evoluzione.
+        
+        Args:
+            population_id: ID della popolazione da testare
+            generations: Numero di generazioni da evolvere
+            session: Sessione database attiva
+            
+        Returns:
+            str: Report del test
+        """
+        # Verifica popolazione
+        print(f"[DEBUG] Verifica popolazione {population_id}")
+        population = session.get(Population, population_id)
+        if not population:
+            return "Popolazione non trovata"
+            
+        logger.info(f"Inizio test evoluzione per popolazione {population.name}")
+        
+        # Test iniziale fitness
+        print("[DEBUG] Calcolo fitness iniziale")
+        initial_stats = self.fitness.calculate_population_fitness(population)
+        
+        # Evolvi per N generazioni
+        evolution_stats = []
+        for i in range(generations):
+            print(f"\n[DEBUG] ===== INIZIO GENERAZIONE {i+1}/{generations} =====")
+            logger.info(f"Evoluzione generazione {i+1}/{generations}")
+            
+            # Ricarica popolazione nella sessione corrente
+            print(f"[DEBUG] Ricarico popolazione {population_id} nella sessione")
+            population = session.get(Population, population_id)
+            
+            # Selezione genitori
+            print("[DEBUG] Selezione genitori")
+            parent_pairs = self.selection.select_parents(
+                population,
+                population.max_size // 2,
+                session
+            )
+            print(f"[DEBUG] Selezionati {len(parent_pairs)} coppie di genitori")
+            
+            # Riproduzione
+            print("[DEBUG] Avvio riproduzione")
+            offspring = self.reproduction.reproduce_batch(parent_pairs, session)
+            print(f"[DEBUG] Generati {len(offspring)} figli")
+            
+            # Mutazione
+            print("[DEBUG] Avvio mutazione")
+            mutated = self.mutation.mutate_population(population, offspring, session)
+            print(f"[DEBUG] Mutati {len(mutated)} cromosomi")
+            
+            # Calcolo fitness solo per cromosomi validi
+            print("[DEBUG] Calcolo fitness cromosomi mutati")
+            valid_mutated = []
+            for chromosome in mutated:
+                if chromosome and chromosome.population_id:
+                    self.fitness.calculate_chromosome_fitness(chromosome)
+                    valid_mutated.append(chromosome)
+            print(f"[DEBUG] {len(valid_mutated)} cromosomi validi dopo mutazione")
+            
+            # Selezione sopravvissuti
+            print("[DEBUG] Selezione sopravvissuti")
+            survivors = self.selection.select_survivors(population, valid_mutated, session)
+            print(f"[DEBUG] Selezionati {len(survivors)} sopravvissuti")
+            
+            # Calcola statistiche
+            gen_stats = self._calculate_generation_stats(survivors)
+            evolution_stats.append(gen_stats)
+            
+            # Aggiorna popolazione
+            print("[DEBUG] Aggiornamento popolazione")
+            self._update_population(population, survivors, session)
+            
+            # Commit esplicito per ogni generazione
+            print("[DEBUG] Commit della generazione")
+            session.commit()
+            print(f"[DEBUG] ===== FINE GENERAZIONE {i+1}/{generations} =====\n")
+        
+        # Test finale fitness
+        print("[DEBUG] Calcolo fitness finale")
+        population = session.get(Population, population_id)
+        final_stats = self.fitness.calculate_population_fitness(population)
+        
+        # Genera report
+        print("[DEBUG] Generazione report")
+        report = self._generate_test_report(
+            population,
+            initial_stats,
+            evolution_stats,
+            final_stats
+        )
+        
+        # Salva report
+        print("[DEBUG] Salvataggio report")
+        self._save_report(population, report)
+        
+        logger.info("Test evoluzione completato")
+        print("[DEBUG] Test evoluzione completato con successo")
+        return report
             
     def _calculate_generation_stats(self, chromosomes: List[Chromosome]) -> Dict:
         """
@@ -163,61 +233,79 @@ class EvolutionTester(PopulationBaseManager):
         Returns:
             Dict: Statistiche generazione
         """
-        fitness_values = []
-        gene_counts = {}
-        weight_stats = {
-            'min': float('inf'),
-            'max': float('-inf'),
-            'total': 0.0,
-            'count': 0
-        }
-        
-        for chromosome in chromosomes:
-            if not chromosome or not chromosome.performance_metrics:
-                continue
+        try:
+            if not chromosomes:
+                return {
+                    'fitness': {'min': 0.0, 'max': 0.0, 'avg': 0.0},
+                    'genes': {},
+                    'weights': {'min': 0.0, 'max': 0.0, 'avg': 0.0}
+                }
                 
-            # Fitness
-            try:
-                fitness = float(json.loads(chromosome.performance_metrics)['fitness'])
-                fitness_values.append(fitness)
-            except (json.JSONDecodeError, KeyError, TypeError):
-                continue
-                
-            # Geni
-            for gene in chromosome.genes:
-                if gene.gene_type not in gene_counts:
-                    gene_counts[gene.gene_type] = 0
-                gene_counts[gene.gene_type] += 1
-                
-                # Pesi
-                weight_stats['min'] = min(weight_stats['min'], gene.weight)
-                weight_stats['max'] = max(weight_stats['max'], gene.weight)
-                weight_stats['total'] += gene.weight
-                weight_stats['count'] += 1
-                
-        return {
-            'fitness': {
-                'min': min(fitness_values) if fitness_values else 0.0,
-                'max': max(fitness_values) if fitness_values else 0.0,
-                'avg': sum(fitness_values) / len(fitness_values) if fitness_values else 0.0
-            },
-            'genes': gene_counts,
-            'weights': {
-                'min': weight_stats['min'] if weight_stats['count'] > 0 else 0.0,
-                'max': weight_stats['max'] if weight_stats['count'] > 0 else 0.0,
-                'avg': weight_stats['total'] / weight_stats['count'] if weight_stats['count'] > 0 else 0.0
+            fitness_values = []
+            gene_counts = {}
+            weight_stats = {
+                'min': float('inf'),
+                'max': float('-inf'),
+                'total': 0.0,
+                'count': 0
             }
-        }
+            
+            for chromosome in chromosomes:
+                if not chromosome or not chromosome.performance_metrics:
+                    continue
+                    
+                # Fitness
+                try:
+                    fitness = float(json.loads(chromosome.performance_metrics)['fitness'])
+                    fitness_values.append(fitness)
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    continue
+                    
+                # Geni
+                for gene in chromosome.genes:
+                    if gene.gene_type not in gene_counts:
+                        gene_counts[gene.gene_type] = 0
+                    gene_counts[gene.gene_type] += 1
+                    
+                    # Pesi
+                    weight_stats['min'] = min(weight_stats['min'], gene.weight)
+                    weight_stats['max'] = max(weight_stats['max'], gene.weight)
+                    weight_stats['total'] += gene.weight
+                    weight_stats['count'] += 1
+                    
+            return {
+                'fitness': {
+                    'min': min(fitness_values) if fitness_values else 0.0,
+                    'max': max(fitness_values) if fitness_values else 0.0,
+                    'avg': sum(fitness_values) / len(fitness_values) if fitness_values else 0.0
+                },
+                'genes': gene_counts,
+                'weights': {
+                    'min': weight_stats['min'] if weight_stats['count'] > 0 else 0.0,
+                    'max': weight_stats['max'] if weight_stats['count'] > 0 else 0.0,
+                    'avg': weight_stats['total'] / weight_stats['count'] if weight_stats['count'] > 0 else 0.0
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Errore calcolo statistiche: {str(e)}")
+            return {
+                'fitness': {'min': 0.0, 'max': 0.0, 'avg': 0.0},
+                'genes': {},
+                'weights': {'min': 0.0, 'max': 0.0, 'avg': 0.0}
+            }
         
-    def _update_population(self, population: Population, survivors: List[Chromosome]) -> None:
+    def _update_population(self, population: Population, survivors: List[Chromosome], session: Session) -> None:
         """
         Aggiorna la popolazione con i sopravvissuti.
         
         Args:
             population: Popolazione da aggiornare
             survivors: Cromosomi sopravvissuti
+            session: Sessione database attiva
         """
         try:
+            print(f"[DEBUG] Inizio aggiornamento popolazione {population.name}")
             # Aggiorna cromosomi
             for chromosome in population.chromosomes:
                 if chromosome not in survivors:
@@ -237,12 +325,14 @@ class EvolutionTester(PopulationBaseManager):
                     json.loads(best_chromosome.performance_metrics)['fitness']
                 )
             
+            print(f"[DEBUG] Popolazione aggiornata: gen={population.current_generation}, score={population.performance_score}")
             logger.info(
                 f"Popolazione {population.name} aggiornata a generazione "
                 f"{population.current_generation}"
             )
             
         except Exception as e:
+            print(f"[DEBUG] ERRORE aggiornamento popolazione: {str(e)}")
             logger.error(f"Errore aggiornamento popolazione: {str(e)}")
             raise
             
@@ -361,6 +451,7 @@ class EvolutionTester(PopulationBaseManager):
         
         return "\n".join(lines)
         
+    @retry_on_db_lock
     def _save_report(self, population: Population, report: str) -> None:
         """
         Salva il report su file.
@@ -370,6 +461,7 @@ class EvolutionTester(PopulationBaseManager):
             report: Report da salvare
         """
         try:
+            print(f"[DEBUG] Inizio salvataggio report per popolazione {population.name}")
             # Crea directory se non esiste
             report_dir = Path('test_reports')
             report_dir.mkdir(parents=True, exist_ok=True)
@@ -382,7 +474,9 @@ class EvolutionTester(PopulationBaseManager):
             with open(report_dir / filename, 'w') as f:
                 f.write(report)
                 
+            print(f"[DEBUG] Report salvato con successo in {filename}")
             logger.info(f"Report salvato in {filename}")
             
         except Exception as e:
+            print(f"[DEBUG] ERRORE salvataggio report: {str(e)}")
             logger.error(f"Errore salvataggio report: {str(e)}")

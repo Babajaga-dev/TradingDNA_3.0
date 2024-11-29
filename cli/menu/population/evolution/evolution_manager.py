@@ -47,29 +47,29 @@ class EvolutionManager(PopulationBaseManager):
             str: Messaggio di conferma o errore
         """
         try:
-            # Verifica popolazione
-            population = self.get_population(population_id)
-            if not population:
-                return "Popolazione non trovata"
+            with self.session_scope() as session:
+                # Verifica popolazione
+                population = self.get_population(population_id)
+                if not population:
+                    return "Popolazione non trovata"
+                    
+                if population.status != 'active':
+                    return f"Popolazione in stato {population.status}, deve essere 'active'"
+                    
+                if population_id in self.active_populations:
+                    return "Evoluzione già in corso"
+                    
+                # Avvia evoluzione in background
+                self.active_populations[population_id] = True
+                asyncio.create_task(self._evolution_loop(population))
                 
-            if population.status != 'active':
-                return f"Popolazione in stato {population.status}, deve essere 'active'"
+                # Log avvio
+                logger.info(f"Avviata evoluzione popolazione {population.name}")
                 
-            if population_id in self.active_populations:
-                return "Evoluzione già in corso"
+                # Aggiorna stato
+                population.status = 'evolving'
                 
-            # Avvia evoluzione in background
-            self.active_populations[population_id] = True
-            asyncio.create_task(self._evolution_loop(population))
-            
-            # Log avvio
-            logger.info(f"Avviata evoluzione popolazione {population.name}")
-            
-            # Aggiorna stato
-            population.status = 'evolving'
-            self.session.commit()
-            
-            return f"Evoluzione avviata per popolazione {population.name}"
+                return f"Evoluzione avviata per popolazione {population.name}"
             
         except Exception as e:
             logger.error(f"Errore avvio evoluzione: {str(e)}")
@@ -86,25 +86,25 @@ class EvolutionManager(PopulationBaseManager):
             str: Messaggio di conferma o errore
         """
         try:
-            # Verifica popolazione
-            population = self.get_population(population_id)
-            if not population:
-                return "Popolazione non trovata"
+            with self.session_scope() as session:
+                # Verifica popolazione
+                population = self.get_population(population_id)
+                if not population:
+                    return "Popolazione non trovata"
+                    
+                if population_id not in self.active_populations:
+                    return "Evoluzione non in corso"
+                    
+                # Ferma evoluzione
+                self.active_populations.pop(population_id)
                 
-            if population_id not in self.active_populations:
-                return "Evoluzione non in corso"
+                # Log stop
+                logger.info(f"Fermata evoluzione popolazione {population.name}")
                 
-            # Ferma evoluzione
-            self.active_populations.pop(population_id)
-            
-            # Log stop
-            logger.info(f"Fermata evoluzione popolazione {population.name}")
-            
-            # Aggiorna stato
-            population.status = 'active'
-            self.session.commit()
-            
-            return f"Evoluzione fermata per popolazione {population.name}"
+                # Aggiorna stato
+                population.status = 'active'
+                
+                return f"Evoluzione fermata per popolazione {population.name}"
             
         except Exception as e:
             logger.error(f"Errore stop evoluzione: {str(e)}")
@@ -139,46 +139,48 @@ class EvolutionManager(PopulationBaseManager):
         try:
             logger.info(f"Inizio evoluzione generazione {population.current_generation + 1}")
             
-            # 1. Selezione genitori
-            num_pairs = population.max_size // 2
-            parent_pairs = self.selection_manager.select_parents(population, num_pairs)
-            
-            # 2. Riproduzione
-            offspring = self.reproduction_manager.reproduce_batch(parent_pairs)
-            
-            # 3. Mutazione
-            mutated_offspring = self.mutation_manager.mutate_population(
-                population, offspring
-            )
-            
-            # 4. Calcolo fitness
-            for chromosome in mutated_offspring:
-                self.fitness_calculator.calculate_chromosome_fitness(chromosome)
-            
-            # 5. Selezione sopravvissuti
-            survivors = self.selection_manager.select_survivors(
-                population, mutated_offspring
-            )
-            
-            # 6. Aggiorna popolazione
-            await self._update_population(population, survivors)
-            
-            logger.info(
-                f"Completata evoluzione generazione "
-                f"{population.current_generation} con {len(survivors)} cromosomi"
-            )
+            with self.session_scope() as session:
+                # 1. Selezione genitori
+                num_pairs = population.max_size // 2
+                parent_pairs = self.selection_manager.select_parents(population, num_pairs, session)
+                
+                # 2. Riproduzione
+                offspring = self.reproduction_manager.reproduce_batch(parent_pairs, session)
+                
+                # 3. Mutazione
+                mutated_offspring = self.mutation_manager.mutate_population(
+                    population, offspring, session
+                )
+                
+                # 4. Calcolo fitness
+                for chromosome in mutated_offspring:
+                    self.fitness_calculator.calculate_chromosome_fitness(chromosome)
+                
+                # 5. Selezione sopravvissuti
+                survivors = self.selection_manager.select_survivors(
+                    population, mutated_offspring, session
+                )
+                
+                # 6. Aggiorna popolazione
+                await self._update_population(population, survivors, session)
+                
+                logger.info(
+                    f"Completata evoluzione generazione "
+                    f"{population.current_generation} con {len(survivors)} cromosomi"
+                )
             
         except Exception as e:
             logger.error(f"Errore evoluzione generazione: {str(e)}")
             raise
             
-    async def _update_population(self, population: Population, survivors: List[Chromosome]) -> None:
+    async def _update_population(self, population: Population, survivors: List[Chromosome], session) -> None:
         """
         Aggiorna la popolazione con i sopravvissuti.
         
         Args:
             population: Popolazione da aggiornare
             survivors: Cromosomi sopravvissuti
+            session: Sessione database attiva
         """
         try:
             # Aggiorna cromosomi
@@ -198,9 +200,6 @@ class EvolutionManager(PopulationBaseManager):
                 json.loads(best_chromosome.performance_metrics)['fitness']
             )
             
-            # Commit cambiamenti
-            self.session.commit()
-            
             logger.info(
                 f"Popolazione {population.name} aggiornata a generazione "
                 f"{population.current_generation}"
@@ -208,7 +207,6 @@ class EvolutionManager(PopulationBaseManager):
             
         except Exception as e:
             logger.error(f"Errore aggiornamento popolazione: {str(e)}")
-            self.session.rollback()
             raise
             
     def get_evolution_status(self, population_id: int) -> Dict:
@@ -222,37 +220,38 @@ class EvolutionManager(PopulationBaseManager):
             Dict: Stato evoluzione
         """
         try:
-            # Verifica popolazione
-            population = self.get_population(population_id)
-            if not population:
-                return {"error": "Popolazione non trovata"}
+            with self.session_scope() as session:
+                # Verifica popolazione
+                population = self.get_population(population_id)
+                if not population:
+                    return {"error": "Popolazione non trovata"}
+                    
+                # Ottieni ultima history
+                history = session.query(EvolutionHistory)\
+                    .filter_by(population_id=population_id)\
+                    .order_by(EvolutionHistory.generation.desc())\
+                    .first()
+                    
+                status = {
+                    "is_evolving": population_id in self.active_populations,
+                    "generation": population.current_generation,
+                    "mutation_rate": population.mutation_rate,
+                    "selection_pressure": population.selection_pressure,
+                    "diversity": population.diversity_score
+                }
                 
-            # Ottieni ultima history
-            history = self.session.query(EvolutionHistory)\
-                .filter_by(population_id=population_id)\
-                .order_by(EvolutionHistory.generation.desc())\
-                .first()
-                
-            status = {
-                "is_evolving": population_id in self.active_populations,
-                "generation": population.current_generation,
-                "mutation_rate": population.mutation_rate,
-                "selection_pressure": population.selection_pressure,
-                "diversity": population.diversity_score
-            }
-            
-            if history:
-                status.update({
-                    "best_fitness": history.best_fitness,
-                    "avg_fitness": history.avg_fitness,
-                    "stats": {
-                        "generation": json.loads(history.generation_stats) if history.generation_stats else {},
-                        "mutation": json.loads(history.mutation_stats) if history.mutation_stats else {},
-                        "selection": json.loads(history.selection_stats) if history.selection_stats else {}
-                    }
-                })
-                
-            return status
+                if history:
+                    status.update({
+                        "best_fitness": history.best_fitness,
+                        "avg_fitness": history.avg_fitness,
+                        "stats": {
+                            "generation": json.loads(history.generation_stats) if history.generation_stats else {},
+                            "mutation": json.loads(history.mutation_stats) if history.mutation_stats else {},
+                            "selection": json.loads(history.selection_stats) if history.selection_stats else {}
+                        }
+                    })
+                    
+                return status
             
         except Exception as e:
             logger.error(f"Errore recupero stato evoluzione: {str(e)}")
