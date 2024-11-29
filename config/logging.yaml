@@ -72,6 +72,26 @@ logging:
       level: ERROR
       handlers: [console, file]
       propagate: false
+
+    cli.genes.volume:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
+
+    cli.genes.obv:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
+
+    cli.genes.volatility_breakout:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
+
+    cli.genes.candlestick:
+      level: ERROR
+      handlers: [console, file]
+      propagate: false
   
   root:
     level: ERROR

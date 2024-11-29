@@ -206,6 +206,106 @@ atr_menu_items = [
     )
 ]
 
+# Menu items per i geni Volume
+volume_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('volume'),
+        description="Testa il gene Volume su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('volume'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('volume'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('volume'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni OBV
+obv_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('obv'),
+        description="Testa il gene OBV su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('obv'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('obv'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('obv'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni Volatility Breakout
+volatility_breakout_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('volatility_breakout'),
+        description="Testa il gene Volatility Breakout su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('volatility_breakout'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('volatility_breakout'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('volatility_breakout'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni Candlestick
+candlestick_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('candlestick'),
+        description="Testa il gene Candlestick su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('candlestick'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('candlestick'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('candlestick'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
 # Sottomenu per ogni gene
 gene_menu_items = [
     create_submenu(
@@ -237,6 +337,26 @@ gene_menu_items = [
         name="ATR",
         items=atr_menu_items,
         description="Average True Range"
+    ),
+    create_submenu(
+        name="Volume",
+        items=volume_menu_items,
+        description="Volume Analysis"
+    ),
+    create_submenu(
+        name="OBV",
+        items=obv_menu_items,
+        description="On Balance Volume"
+    ),
+    create_submenu(
+        name="Volatility Breakout",
+        items=volatility_breakout_menu_items,
+        description="Volatility Breakout Strategy"
+    ),
+    create_submenu(
+        name="Candlestick",
+        items=candlestick_menu_items,
+        description="Candlestick Pattern Analysis"
     ),
     create_separator(),
     create_command(

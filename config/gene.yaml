@@ -99,3 +99,75 @@ gene:
     default:
       period: 14
       multiplier: 1.0
+  volume:
+    constraints:
+      period:
+        max: 50
+        min: 5
+      threshold:
+        max: 3.0
+        min: 1.2
+      min_price_change:
+        max: 0.05
+        min: 0.001
+    default:
+      period: 20
+      threshold: 1.5
+      min_price_change: 0.005
+  obv:
+    constraints:
+      period:
+        max: 50
+        min: 5
+      threshold:
+        max: 0.1
+        min: 0.01
+    default:
+      period: 20
+      threshold: 0.03
+  volatility_breakout:
+    constraints:
+      period:
+        max: 50
+        min: 5
+      multiplier:
+        max: 3.0
+        min: 0.5
+      breakout_threshold:
+        max: 0.05
+        min: 0.001
+      consolidation_periods:
+        max: 20
+        min: 3
+    default:
+      period: 20
+      multiplier: 1.5
+      breakout_threshold: 0.01
+      consolidation_periods: 5
+  candlestick:
+    constraints:
+      doji_threshold:
+        max: 0.3
+        min: 0.05
+      shadow_ratio:
+        max: 0.5
+        min: 0.1
+      engulfing_size:
+        max: 2.0
+        min: 1.1
+      star_body_size:
+        max: 0.3
+        min: 0.05
+      harami_size:
+        max: 0.8
+        min: 0.2
+      pattern_weight:
+        max: 1.0
+        min: 0.1
+    default:
+      doji_threshold: 0.1
+      shadow_ratio: 0.3
+      engulfing_size: 1.5
+      star_body_size: 0.15
+      harami_size: 0.5
+      pattern_weight: 0.5

@@ -34,12 +34,36 @@
   - [x] Bande di volatilità basate su ATR
   - [x] Visualizzazione grafica con indicatore
   - [x] Sistema di logging dedicato
+- [x] Gene Volume
+  - [x] Analisi volume con media mobile
+  - [x] Volume ratio per identificare volumi anomali
+  - [x] Configurazione periodo e soglie
+  - [x] Visualizzazione grafica volume e indicatori
+  - [x] Sistema di logging dedicato
+- [x] Gene OBV (On Balance Volume)
+  - [x] Calcolo OBV e media mobile
+  - [x] Analisi divergenze prezzo/volume
+  - [x] Configurazione periodo e threshold
+  - [x] Visualizzazione grafica OBV e media
+  - [x] Sistema di logging dedicato
+- [x] Gene Volatility Breakout
+  - [x] Calcolo bande di volatilità
+  - [x] Identificazione breakout dopo consolidamento
+  - [x] Configurazione periodo, moltiplicatore e threshold
+  - [x] Visualizzazione grafica con bande e area
+  - [x] Sistema di logging dedicato
+- [x] Gene Candlestick
+  - [x] Identificazione pattern principali:
+    - [x] Doji
+    - [x] Hammer/Hanging Man
+    - [x] Engulfing patterns
+    - [x] Morning/Evening Star
+    - [x] Harami
+  - [x] Configurazione parametri pattern
+  - [x] Visualizzazione grafica candlestick con pattern
+  - [x] Sistema di logging dedicato
 
 ### Da Implementare
-- [ ] Gene Volume Base
-- [ ] Gene OBV
-- [ ] Gene Volatility Breakout
-- [ ] Gene Candlestick
 - [ ] Gene Support/Resistance
 - [ ] Gene Holding Period
 - [ ] Gene Position Size
@@ -68,7 +92,7 @@
 - [ ] Ottimizzazione parametri
 
 ## Note
-- Sistema base funzionante con sei geni (RSI, Moving Average, MACD, Bollinger Bands, Stochastic, ATR)
+- Sistema base funzionante con dieci geni (RSI, Moving Average, MACD, Bollinger Bands, Stochastic, ATR, Volume, OBV, Volatility Breakout, Candlestick)
 - Implementazioni complete con:
   - Configurazione parametri in gene.yaml
   - Sistema di logging dedicato per ogni gene
@@ -84,3 +108,7 @@
 - Aggiunto placeholder per ottimizzazione genetica nel menu geni
 - Sistema di test aggiornato per supportare dati OHLC completi
 - Visualizzazione parametri e test funzionanti per tutti i geni
+- Supporto per visualizzazione volume e indicatori volume-based
+- Analisi avanzata delle divergenze prezzo/volume
+- Identificazione breakout basati su volatilità
+- Riconoscimento pattern candlestick avanzato

@@ -11,6 +11,10 @@ from .macd_gene import MACDGene
 from .bollinger_gene import BollingerGene
 from .stochastic_gene import StochasticGene
 from .atr_gene import ATRGene
+from .volume_gene import VolumeGene
+from .obv_gene import OBVGene
+from .volatility_breakout_gene import VolatilityBreakoutGene
+from .candlestick_gene import CandlestickGene
 
 __all__ = [
     'Gene',
@@ -19,5 +23,9 @@ __all__ = [
     'MACDGene',
     'BollingerGene',
     'StochasticGene',
-    'ATRGene'
+    'ATRGene',
+    'VolumeGene',
+    'OBVGene',
+    'VolatilityBreakoutGene',
+    'CandlestickGene'
 ]

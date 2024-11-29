@@ -16,7 +16,8 @@ from data.database.models.models import (
 )
 from ..genes import (
     RSIGene, MovingAverageGene, MACDGene, BollingerGene,
-    StochasticGene, ATRGene
+    StochasticGene, ATRGene, VolumeGene, OBVGene, 
+    VolatilityBreakoutGene, CandlestickGene
 )
 from .gene_manager_base import GeneManagerBase
 
@@ -92,8 +93,8 @@ class GeneManagerAnalytics(GeneManagerBase):
                 self.console.print(f"[red]Nessun dato trovato per {pair} ({timeframe})[/red]")
                 return np.array([])
                 
-            # Restituisce array OHLC completo per i nuovi geni
-            return np.array([[d.open, d.high, d.low, d.close] for d in data])
+            # Restituisce array OHLC completo
+            return np.array([[d.open, d.high, d.low, d.close, d.volume] for d in data])
         except Exception as e:
             self.logger.error(f"Errore nel recupero dei dati storici: {str(e)}")
             return np.array([])
@@ -174,7 +175,11 @@ class GeneManagerAnalytics(GeneManagerBase):
             'macd': MACDGene,
             'bollinger': BollingerGene,
             'stochastic': StochasticGene,
-            'atr': ATRGene
+            'atr': ATRGene,
+            'volume': VolumeGene,
+            'obv': OBVGene,
+            'volatility_breakout': VolatilityBreakoutGene,
+            'candlestick': CandlestickGene
         }
         
         if gene_type not in gene_classes:
@@ -209,8 +214,6 @@ class GeneManagerAnalytics(GeneManagerBase):
             if len(data) < days:
                 self.console.print(f"[yellow]Attenzione: recuperati solo {len(data)} giorni di dati[/yellow]")
                 
-            # Calcola segnali
-            signals = []
             # Determina il minimo numero di punti dati necessari in base al tipo di gene
             if gene_type == 'macd':
                 min_data_points = max(
@@ -227,9 +230,22 @@ class GeneManagerAnalytics(GeneManagerBase):
                 ) + 1
             elif gene_type == 'atr':
                 min_data_points = int(float(gene.params['period'])) + 1
+            elif gene_type == 'volume':
+                min_data_points = int(float(gene.params['period'])) + 1
+            elif gene_type == 'obv':
+                min_data_points = int(float(gene.params['period'])) + 1
+            elif gene_type == 'volatility_breakout':
+                min_data_points = max(
+                    int(float(gene.params['period'])),
+                    int(float(gene.params['consolidation_periods']))
+                ) + 1
+            elif gene_type == 'candlestick':
+                min_data_points = 3  # Servono almeno 3 candele per alcuni pattern
             else:
                 min_data_points = int(float(gene.params.get('period', 14))) + 1
-            
+                
+            # Calcola segnali
+            signals = []
             for i in range(min_data_points, len(data) + 1):
                 signal = gene.calculate_signal(data[:i])
                 signals.append(signal)
@@ -240,41 +256,133 @@ class GeneManagerAnalytics(GeneManagerBase):
             # Visualizza grafico
             plt.figure(figsize=(12, 6))
             
-            # Subplot superiore per i prezzi
+            # Subplot superiore per i prezzi e indicatori
             plt.subplot(2, 1, 1)
-            plt.plot(data[:, 3], label='Prezzo')  # Usa il prezzo di chiusura
+            plt.plot(data[:, 3], label='Prezzo', color='blue')  # Close price
             
             # Aggiungi indicatori specifici al grafico
             if gene_type == 'moving_average':
-                ma = gene.calculate_ma(data[:, 3])  # Usa solo close price
+                ma = gene.calculate_ma(data[:, 3])  # Close price
                 plt.plot(ma, label=f'{gene.params["type"]} ({gene.params["period"]})', linestyle='--')
             elif gene_type == 'macd':
-                macd_line, signal_line, _ = gene.calculate_macd(data[:, 3])  # Usa solo close price
+                macd_line, signal_line, _ = gene.calculate_macd(data[:, 3])  # Close price
                 plt.plot(macd_line, label='MACD Line', linestyle='--')
                 plt.plot(signal_line, label='Signal Line', linestyle=':')
             elif gene_type == 'bollinger':
-                middle_band, upper_band, lower_band = gene.calculate_bands(data[:, 3])  # Usa solo close price
+                middle_band, upper_band, lower_band = gene.calculate_bands(data[:, 3])  # Close price
                 plt.plot(middle_band, label='Middle Band', linestyle='--')
                 plt.plot(upper_band, label='Upper Band', linestyle=':')
                 plt.plot(lower_band, label='Lower Band', linestyle=':')
             elif gene_type == 'stochastic':
-                k_line, d_line = gene.calculate_stochastic(data[:, 1], data[:, 2], data[:, 3])  # high, low, close
+                k_line, d_line = gene.calculate_stochastic(data[:, 1], data[:, 2], data[:, 3])  # High, Low, Close
                 plt.plot(k_line, label='%K Line', linestyle='--')
                 plt.plot(d_line, label='%D Line', linestyle=':')
             elif gene_type == 'atr':
-                atr = gene.calculate_atr(data[:, 1], data[:, 2], data[:, 3])  # high, low, close
+                atr = gene.calculate_atr(data[:, 1], data[:, 2], data[:, 3])  # High, Low, Close
                 plt.plot(atr, label='ATR', linestyle='--')
+            elif gene_type == 'volume':
+                volume_ma, volume_ratio = gene.calculate_volume_metrics(data[:, 4])  # Volume
+                plt.subplot(2, 1, 1)  # Prezzo
+                plt.plot(data[:, 3], label='Prezzo', color='blue')
+                plt.legend()
+                plt.grid(True)
                 
+                # Subplot centrale per il volume
+                plt.subplot(3, 1, 2)
+                plt.bar(range(len(data)), data[:, 4], label='Volume', alpha=0.3, color='gray')
+                plt.plot(volume_ma, label=f'Volume MA ({gene.params["period"]})', color='orange')
+                plt.legend()
+                plt.grid(True)
+                
+                # Subplot inferiore per il volume ratio
+                plt.subplot(3, 1, 3)
+                plt.plot(volume_ratio, label='Volume Ratio', color='green')
+                plt.axhline(y=float(gene.params['threshold']), color='r', linestyle='--', label='Threshold')
+                plt.axhline(y=1/float(gene.params['threshold']), color='r', linestyle='--')
+            elif gene_type == 'obv':
+                obv, obv_ma = gene.calculate_obv(data[:, 3], data[:, 4])  # Close, Volume
+                plt.subplot(2, 1, 1)  # Prezzo
+                plt.plot(data[:, 3], label='Prezzo', color='blue')
+                plt.legend()
+                plt.grid(True)
+                
+                # Subplot inferiore per OBV
+                plt.subplot(2, 1, 2)
+                plt.plot(obv, label='OBV', color='purple')
+                plt.plot(obv_ma, label=f'OBV MA ({gene.params["period"]})', color='orange', linestyle='--')
+                plt.legend()
+                plt.grid(True)
+            elif gene_type == 'volatility_breakout':
+                upper_band, lower_band = gene.calculate_volatility_bands(data[:, 1], data[:, 2], data[:, 3])  # High, Low, Close
+                plt.plot(upper_band, label='Upper Band', linestyle='--', color='red')
+                plt.plot(lower_band, label='Lower Band', linestyle='--', color='green')
+                plt.fill_between(range(len(data)), upper_band, lower_band, alpha=0.1, color='gray')
+            elif gene_type == 'candlestick':
+                # Crea subplot per il grafico candlestick
+                plt.subplot(2, 1, 1)
+                
+                # Plot candele
+                for i in range(len(data)):
+                    # Colori candele
+                    color = 'green' if data[i, 3] > data[i, 0] else 'red'
+                    
+                    # Corpo candela
+                    plt.plot([i, i], [data[i, 0], data[i, 3]], color=color, linewidth=3)
+                    # Shadow superiore e inferiore
+                    plt.plot([i, i], [data[i, 1], data[i, 2]], color=color, linewidth=1)
+                    
+                    # Evidenzia pattern riconosciuti
+                    if i >= 2:  # Servono almeno 3 candele per alcuni pattern
+                        # Doji
+                        if gene.is_doji(data[i, 0], data[i, 1], data[i, 2], data[i, 3]):
+                            plt.plot(i, data[i, 1], 'ko', markersize=8, label='Doji' if i == 2 else "")
+                            
+                        # Hammer/Hanging Man
+                        hammer, hanging = gene.is_hammer(data[i, 0], data[i, 1], data[i, 2], data[i, 3])
+                        if hammer or hanging:
+                            plt.plot(i, data[i, 1], 'b^' if hammer else 'rv', markersize=8, 
+                                   label='Hammer' if hammer and i == 2 else 'Hanging Man' if hanging and i == 2 else "")
+                            
+                        # Engulfing
+                        if i > 0:
+                            bull_eng, bear_eng = gene.is_engulfing(
+                                data[i-1, 0], data[i-1, 3], data[i, 0], data[i, 3]
+                            )
+                            if bull_eng or bear_eng:
+                                plt.plot(i, data[i, 1], 'g*' if bull_eng else 'r*', markersize=10,
+                                       label='Bullish Engulfing' if bull_eng and i == 2 else 
+                                             'Bearish Engulfing' if bear_eng and i == 2 else "")
+                                
+                        # Morning/Evening Star
+                        morning, evening = gene.is_star(data, i)
+                        if morning or evening:
+                            plt.plot(i, data[i, 1], 'g^' if morning else 'rv', markersize=12,
+                                   label='Morning Star' if morning and i == 2 else 
+                                         'Evening Star' if evening and i == 2 else "")
+                            
+                        # Harami
+                        if i > 0:
+                            bull_harami, bear_harami = gene.is_harami(
+                                data[i-1, 0], data[i-1, 3], data[i, 0], data[i, 3]
+                            )
+                            if bull_harami or bear_harami:
+                                plt.plot(i, data[i, 1], 'gs' if bull_harami else 'rs', markersize=8,
+                                       label='Bullish Harami' if bull_harami and i == 2 else 
+                                             'Bearish Harami' if bear_harami and i == 2 else "")
+                
+                plt.legend(loc='upper left')
+            
             plt.title(f'Test Gene {gene_type.upper()} - {pair} ({timeframe})')
             plt.legend()
             plt.grid(True)
             
-            # Subplot inferiore per i segnali
-            plt.subplot(2, 1, 2)
-            plt.plot(signals, label='Segnale', color='orange')
-            plt.axhline(y=0, color='r', linestyle='--')
-            plt.legend()
-            plt.grid(True)
+            if gene_type != 'volume':
+                # Subplot inferiore per i segnali (non per volume che ha già 3 subplot)
+                plt.subplot(2, 1, 2)
+                plt.plot(signals, label='Segnale', color='orange')
+                plt.axhline(y=0, color='r', linestyle='--')
+                plt.legend()
+                plt.grid(True)
             
             # Salva il grafico
             output_dir = Path('data/gene_tests')
