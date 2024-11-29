@@ -14,36 +14,13 @@ from typing import Dict, Optional, Any
 from pathlib import Path
 from datetime import datetime
 
-# Definizione costanti di logging
-DEBUG = 10
-INFO = 20
-WARNING = 30
-ERROR = 40
-CRITICAL = 50
-
 class LogManager:
     """Gestore centralizzato per il logging dell'applicazione."""
     
-    def __init__(self, log_level: int = INFO):
-        """
-        Inizializza il LogManager.
-        
-        Args:
-            log_level: Livello di logging predefinito
-        """
-        self.log_level = log_level
+    def __init__(self):
+        """Inizializza il LogManager."""
         self.log_dir = Path("logs")
         self.handlers: Dict[str, 'logging.Handler'] = {}
-        
-        # Setup logging di base per debug iniziale
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            stream=sys.stdout
-        )
-        self._debug_logger = logging.getLogger('LogManager')
-        
-        # Crea directory logs se non esiste
         self._ensure_log_directory()
         
     def _ensure_log_directory(self):
@@ -62,9 +39,11 @@ class LogManager:
                     f.write("Test scrittura log")
                 test_file.unlink()  # Rimuovi il file di test
             except Exception as e:
+                print(f"Errore test scrittura: {e}")
                 raise
             
         except Exception as e:
+            print(f"Errore creazione directory log: {e}")
             raise
         
     def configure_from_yaml(self, config_path: str):
@@ -79,59 +58,59 @@ class LogManager:
             if not os.path.exists(config_path):
                 raise FileNotFoundError(f"File di configurazione non trovato: {config_path}")
             
-            # Ricarica il file per parsing
+            # Carica configurazione logging
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
             
-            # Verifica struttura configurazione
-            if not config or 'logging' not in config:
-                raise ValueError("Configurazione logging non valida")
+            # Estrai configurazioni di sistema
+            system_config = config.get('system', {})
             
-            # Carica configurazione di sistema
-            system_config = self._load_system_config()
+            # Estrai log level e formato
+            log_level = system_config.get('log_level', 'INFO').upper()
+            log_format = system_config.get('log_format', 'colored')
             
-            # Applica impostazioni da system.yaml
-            config = self._apply_system_config(config, system_config)
+            # Crea una copia della configurazione senza la sezione system
+            logging_config = {k: v for k, v in config.items() if k != 'system'}
             
-            # Configura il logging
-            logging.config.dictConfig(config['logging'])
+            # Aggiorna livello di logging
+            if 'root' in logging_config:
+                logging_config['root']['level'] = log_level
+                
+                # Aggiorna anche i livelli degli handlers
+                for handler in logging_config['handlers'].values():
+                    handler['level'] = log_level
+                    
+                # Aggiorna i livelli dei loggers
+                for logger in logging_config['loggers'].values():
+                    logger['level'] = log_level
             
-            # Test scrittura log
-            test_logger = logging.getLogger('LogTest')
-            test_logger.info("Test scrittura log - Configurazione completata")
+            # Gestisci formattazione
+            if log_format == 'colored':
+                for handler in logging_config.get('handlers', {}).values():
+                    if handler.get('formatter') == 'simple':
+                        handler['formatter'] = 'colored'
+            
+            # Stampa debug info
+            print("Configurazione logging:")
+            print(f"Level: {log_level}")
+            print(f"Format: {log_format}")
+            print("Handlers:", list(logging_config.get('handlers', {}).keys()))
+            print("Loggers:", list(logging_config.get('loggers', {}).keys()))
+            
+            # Applica configurazione finale
+            logging.config.dictConfig(logging_config)
+            
+            # Test logging
+            root_logger = logging.getLogger()
+            root_logger.debug("Test debug message")
+            root_logger.info("Test info message")
             
         except Exception as e:
+            print(f"Errore configurazione logging: {e}")
             import traceback
             traceback.print_exc()
-            self._setup_base_config()
-        
-    def _load_system_config(self) -> Dict[str, Any]:
-        """Carica la configurazione di sistema."""
-        try:
-            with open("config/system.yaml", 'r') as f:
-                system_yaml = yaml.safe_load(f)
-                return system_yaml.get('system', {})
-        except Exception as e:
-            return {}
-        
-    def _apply_system_config(self, config: Dict, system_config: Dict) -> Dict:
-        """Applica le impostazioni di sistema alla configurazione di logging."""
-        # Estrai log level e formato da system_config
-        log_level = system_config.get('log_level', 'INFO').upper()
-        log_format = system_config.get('log_format', 'colored')
-        
-        # Aggiorna livello di logging
-        if 'logging' in config and 'root' in config['logging']:
-            config['logging']['root']['level'] = log_level
-        
-        # Gestisci formattazione
-        if log_format == 'colored':
-            for handler in config.get('logging', {}).get('handlers', {}).values():
-                if handler.get('formatter') == 'simple':
-                    handler['formatter'] = 'colored'
-        
-        return config
-    
+            raise
+            
     def get_logger(self, name: str) -> 'logging.Logger':
         """
         Ottiene un logger configurato per il modulo specificato.
@@ -180,6 +159,7 @@ class LogManager:
             self.handlers[filename] = handler
             
         except Exception as e:
+            print(f"Errore aggiunta file handler: {e}")
             raise
         
     def remove_handler(self, handler_name: str):

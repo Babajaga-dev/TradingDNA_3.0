@@ -5,6 +5,7 @@ __pycache__/
 logs/
 *.db*
 /data/gene_tests/
+/test_reports/
 
 # C extensions
 *.so

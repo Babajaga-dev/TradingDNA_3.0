@@ -12,165 +12,140 @@ inoltre nel codice non devono esserci parametri hardcodadi, tutti i parametri va
 I livelli di tracciamento devono essere gestiti per ogni file prodottto tramite il sistema centrale di logging
 file non superiore a 350 righe altrimenti dividerli
 
-Lista di geni da implementare in questo caso niente parametrihardcoded tutti nel file gene.yaml in config dove ci saranno quelli di default
-mentre ci sarà una copia nel database in maniera da poterli ottimizzare e variare a runtime, o banalmente modificarli da cli
+Step 1.2: Sistema di Database
 
-Geni di Analisi del Prezzo
-Questi geni interpretano i movimenti di prezzo puri:
+### Struttura del Database
 
-Gene RSI
+#### Tabella: populations
+- population_id (PK): Identificativo unico della popolazione
+- name: Nome descrittivo della popolazione
+- max_size: Dimensione massima consentita
+- current_generation: Numero della generazione corrente
+- created_at: Data di creazione
+- updated_at: Data ultimo aggiornamento
+- status: Stato della popolazione (active/archived)
+- diversity_score: Metrica della diversità genetica
+- performance_score: Score complessivo della popolazione
+- mutation_rate: Tasso di mutazione (0.1-5%)
+- selection_pressure: Pressione selettiva (1-10)
+- generation_interval: Intervallo generazionale
+- diversity_threshold: Soglia diversità minima
+- symbol_id: Riferimento al symbol di trading
+- timeframe: Timeframe di analisi
 
-Funzione: Misura la forza relativa del prezzo
-Alleli:
+#### Tabella: chromosomes
+- chromosome_id (PK): Identificativo unico del cromosoma
+- population_id (FK): Riferimento alla popolazione
+- fingerprint: Hash unico del DNA della strategia
+- generation: Generazione di appartenenza
+- age: Età in generazioni
+- created_at: Data di creazione
+- parent1_id: ID del primo genitore
+- parent2_id: ID del secondo genitore
+- status: Stato del cromosoma
+- performance_metrics: JSON con metriche di performance
+- weight_distribution: JSON con pesi dei geni
+- last_test_date: Data ultimo test
+- test_results: JSON con risultati test
 
-Periodo di calcolo
-Soglia ipercomprato
-Soglia ipervenduto
+#### Tabella: chromosome_genes
+- chromosome_gene_id (PK): Identificativo unico
+- chromosome_id (FK): Riferimento al cromosoma
+- gene_type: Tipo di gene
+- parameters: JSON con parametri
+- weight: Peso nelle decisioni
+- is_active: Stato attivazione
+- performance_contribution: Contributo alle performance
+- last_mutation_date: Data ultima mutazione
+- mutation_history: Storia delle mutazioni
+- validation_rules: Regole validazione parametri
 
-Gene Moving Average
+#### Tabella: evolution_history
+- history_id (PK): Identificativo unico
+- population_id (FK): Riferimento alla popolazione
+- generation: Numero generazione
+- best_fitness: Miglior fitness
+- avg_fitness: Fitness media
+- diversity_metric: Metrica diversità
+- mutation_rate: Tasso mutazione
+- timestamp: Data evoluzione
+- generation_stats: Statistiche dettagliate generazione
+- mutation_stats: Statistiche mutazioni
+- selection_stats: Statistiche selezione
+- performance_breakdown: Breakdown performance per tipo gene
 
-Funzione: Identifica la direzione del trend
-Alleli:
+Step 1.3: Sistema CLI
 
-Tipo di media (SMA, EMA)
-Periodo della media
-Distanza per segnale
+### Menu Principale
+```
+=== TradingDNA 3.0 ===
+1. Configurazione
+   - Parametri Sistema
+   - Reset Sistema
+2. Dati
+   - Scarica Dati
+   - Visualizza Dati
+3. Geni
+   - Test Gene
+   - Visualizza Parametri
+   - Modifica Parametri
+   - Reset Parametri
+4. Popolazioni
+   - Crea Popolazione
+   - Lista Popolazioni
+   - Status Popolazione
+   - Dettagli Cromosoma
+   - Avvia Evoluzione
+   - Ferma Evoluzione
+   - Status Evoluzione
+5. Test
+   - Test Sistema Completo
+   - Inizializza Database Test
+   - Crea Popolazione Test
+   - Test Evoluzione
+```
 
-Gene Bollinger Bands
+### Prossimi Step
 
-Funzione: Misura volatilità e livelli estremi
-Alleli:
+1. Sistema di Trading
+   - Implementare calcolo segnali per ogni gene
+   - Gestire combinazione segnali
+   - Validare segnali generati
+   - Implementare position sizing
+   - Gestire risk management
+   - Tracciare performance
 
-Periodo base
-Numero di deviazioni standard
-Percentuale di tocco banda
+2. Connessione Exchange
+   - Configurare connessione
+   - Gestire autenticazione
+   - Implementare rate limiting
+   - Gestire ordini
+   - Monitorare posizioni
 
-Gene MACD
+3. Monitoraggio
+   - Dashboard realtime
+   - Alert sistema
+   - Report performance
+   - Analisi trading
 
-Funzione: Identifica momentum e divergenze
-Alleli:
+Note Implementative:
+- Mantenere file sotto 350 righe
+- Usare logging centralizzato
+- Evitare valori hardcoded
+- Validare input utente
+- Gestire errori gracefully
+- Documentare funzionalità
+- Testare componenti
+- Usare configurazioni YAML
+- Mantenere stato database
+- Gestire recovery sistema
 
-Periodo breve
-Periodo lungo
-Periodo segnale
-
-
-Geni di Volume
-
-Gene Volume Base
-
-Funzione: Analizza forza del movimento
-Alleli:
-
-Periodo confronto
-Moltiplicatore volume normale
-Soglia esplosione volume
-
-Gene OBV (On Balance Volume)
-
-Funzione: Conferma trend con volume
-Alleli:
-
-Periodo di smoothing
-Soglia divergenza
-Peso del segnale
-
-
-Geni di Volatilità
-
-Gene ATR
-
-Funzione: Misura la volatilità per il sizing
-Alleli:
-
-Periodo calcolo
-Moltiplicatore per stops
-Peso nel sizing
-
-Gene Volatility Breakout
-
-Funzione: Identifica rotture di volatilità
-Alleli:
-
-Periodo quiete
-Moltiplicatore esplosione
-Tempo minimo quiete
-
-
-Geni di Pattern
-
-Gene Candlestick
-
-Funzione: Riconosce pattern candlestick
-Alleli:
-
-Tipi pattern da cercare
-Dimensione minima candele
-Peso del pattern
-
-Gene Support/Resistance
-
-Funzione: Identifica livelli chiave
-Alleli:
-
-Periodo di lookback
-Numero tocchi necessari
-Spessore del livello
-
-
-Gene Holding Period
-
-Funzione: Gestisce durata posizioni
-Alleli:
-
-Tempo minimo
-Tempo massimo
-Scala temporale
-
-
-Geni di Money Management
-
-Gene Position Size
-
-Funzione: Calcola dimensione posizione
-Alleli:
-
-Percentuale account
-Rischio per trade
-Leva massima
-
-Gene Stop Loss
-
-Funzione: Gestisce uscite di protezione
-Alleli:
-
-Tipo stop (fisso, ATR, pivots)
-Distanza
-Trailing attivazione
-
-Gene Take Profit
-
-Funzione: Gestisce target di profitto
-Alleli:
-
-Tipo target (R:R, livelli, ATR)
-Numero livelli
-Percentuale chiusura per livello
-
-Note Implementative
-Ogni gene dovrebbe avere:
-
-Una funzione di calcolo del proprio segnale
-Una funzione di mutazione degli alleli
-Una funzione di crossover con geni simili
-Un peso nel sistema decisionale
-Un sistema di validazione dei parametri
-
-Nella cli facciamo  un menu geni e un sotomenu con le seguenti funzioni
-
-Possibilità di testare un gene su un periodo storico specifico (definito in giorni da prendere nello storico partendo dalla data del dato storico più vecchio)
-Visualizzare i segnali generati su un grafico del prezzo
-Ottenere statistiche sui segnali (quanti, distribuzione temporale, precisione)
-Calcolare metriche di efficacia (percentuale successo, falsi segnali)
-Visualizzare e settare i parametri da DB.
-
+Stato Attuale:
+- Sistema base funzionante con dieci geni
+- Implementazioni complete con configurazione e logging
+- Database base implementato
+- Struttura menu CLI completata
+- Sistema popolazioni operativo
+- Sistema evoluzione implementato
+- Sistema test automatizzato
+- Pronto per implementazione trading

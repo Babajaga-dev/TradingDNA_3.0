@@ -12,6 +12,7 @@ import traceback
 import logging
 import asyncio
 import nest_asyncio
+import yaml
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -35,24 +36,24 @@ from cli.progress import (
 )
 from cli.config import (
     ConfigError,
-    load_system_config,
     get_config_loader
 )
 from cli.menu.download_manager import DownloadManager
+from cli.menu.population.population_menu import PopulationMenuManager
 from data.database.models import (
     get_session, Symbol, MarketData, Exchange,
     initialize_gene_parameters, check_gene_parameters_exist
 )
 
-# Configura un logger specifico per questo modulo
-logger = logging.getLogger(__name__)
+# Configura il logger usando get_logger
+logger = get_logger(__name__)
 
 # Abilita il supporto per asyncio nidificato
 nest_asyncio.apply()
 
 def simulate_loading(duration: float = 2.0) -> None:
     """Simula un caricamento per testing."""
-    logger.debug(f"Inizio simulazione caricamento di {duration} secondi")
+    logger.info(f"Inizio simulazione caricamento di {duration} secondi")
     spinner = create_spinner(
         description="Caricamento",
         style="dots",
@@ -62,29 +63,49 @@ def simulate_loading(duration: float = 2.0) -> None:
     spinner.start()
     time.sleep(duration)
     spinner.stop()
-    logger.debug("Fine simulazione caricamento")
+    logger.info("Fine simulazione caricamento")
 
 def check_system_status() -> str:
     """Verifica lo stato del sistema."""
-    logger.debug("Inizio verifica stato sistema")
+    logger.info("Inizio verifica stato sistema")
     
     spinner = create_spinner(description="Verifica stato in corso")
     spinner.start()
     
     try:
-        # Carica configurazione corrente
-        config = get_config_loader().config
-        
-        # Verifica componenti
-        status = []
-        status.append(f"Log Level: {config['system']['log_level']}")
-        status.append(f"Data Directory: {config['system']['data_dir']}")
-        status.append(f"Trading Mode: {config['portfolio']['mode']}")
-        status.append(f"Symbols: {', '.join(config['portfolio']['symbols'])}")
-        status.append(f"Timeframes: {', '.join(config['portfolio']['timeframes'])}")
-        
-        logger.debug("Fine verifica stato sistema")
-        return "\n".join(status)
+        # Carica configurazione da logging.yaml
+        with open("config/logging.yaml", 'r') as f:
+            config = yaml.safe_load(f)
+            system_config = config.get('system', {})
+            
+            # Verifica componenti
+            status = []
+            status.append(f"Log Level: {system_config.get('log_level', 'N/A')}")
+            status.append(f"Data Directory: {system_config.get('data_dir', 'N/A')}")
+            
+            # Verifica indicatori
+            indicators = system_config.get('indicators', {})
+            status.append(f"Cache Size: {indicators.get('cache_size', 'N/A')}")
+            status.append(f"Indicators Enabled: {indicators.get('enabled', 'N/A')}")
+            
+            # Verifica batch sizes
+            batch_sizes = system_config.get('download', {}).get('batch_size', {})
+            status.append("\nBatch Sizes:")
+            for timeframe, size in batch_sizes.items():
+                status.append(f"  {timeframe}: {size}")
+            
+            # Verifica handlers di logging
+            handlers = config.get('handlers', {})
+            status.append("\nLog Handlers:")
+            for handler_name, handler in handlers.items():
+                status.append(f"  {handler_name}: {handler.get('level', 'N/A')} -> {handler.get('filename', 'console')}")
+            
+            logger.info("Fine verifica stato sistema")
+            return "\n".join(status)
+            
+    except Exception as e:
+        logger.error(f"Errore verifica stato: {str(e)}")
+        return f"Errore: {str(e)}"
     finally:
         spinner.stop()
 
@@ -95,7 +116,7 @@ def setup_main_menu() -> MenuManager:
     Returns:
         MenuManager configurato con tutti i comandi
     """
-    logger.debug("Inizio configurazione menu principale")
+    logger.info("Inizio configurazione menu principale")
     menu = MenuManager("TradingDNA CLI")
     
     # Aggiungi Status Sistema
@@ -109,7 +130,7 @@ def setup_main_menu() -> MenuManager:
     menu.add_menu_item(create_separator())
     
     # Crea sottomenu Gestione Dati
-    logger.debug("Creazione comandi Gestione Dati")
+    logger.info("Creazione comandi Gestione Dati")
     data_menu_items = [
         create_command(
             name="Scarica Dati Storici",
@@ -125,10 +146,10 @@ def setup_main_menu() -> MenuManager:
         )
     ]
     
-    # Debug: stampa i comandi del sottomenu Gestione Dati
-    logger.debug("Comandi nel sottomenu Gestione Dati:")
+    # Log i comandi del sottomenu Gestione Dati
+    logger.info("Comandi nel sottomenu Gestione Dati:")
     for item in data_menu_items:
-        logger.debug(f"Nome: {item.name}, Visibile: {item.is_visible()}, Tipo: {type(item)}")
+        logger.info(f"Nome: {item.name}, Visibile: {item.is_visible()}, Tipo: {type(item)}")
     
     data_menu = create_submenu(
         name="Gestione Dati",
@@ -155,8 +176,20 @@ def setup_main_menu() -> MenuManager:
         description="Gestione e test dei geni"
     )
     menu.add_menu_item(genes_menu)
+
+    # Aggiungi separatore prima del menu popolazione
+    menu.add_menu_item(create_separator())
+
+    # Crea sottomenu Popolazione
+    population_manager = PopulationMenuManager()
+    population_menu = create_submenu(
+        name="Popolazione",
+        items=population_manager.get_menu_items(),
+        description="Gestione delle popolazioni e evoluzione"
+    )
+    menu.add_menu_item(population_menu)
     
-    logger.debug("Fine configurazione menu principale")
+    logger.info("Fine configurazione menu principale")
     return menu
 
 def initialize_event_loop():
@@ -171,15 +204,8 @@ def initialize_event_loop():
 def main():
     """Entry point principale dell'applicazione."""
     try:
-        # Setup logging di base per messaggi iniziali
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            stream=sys.stdout
-        )
-        
-        # Configura il logger specifico per questo modulo
-        logger.setLevel(logging.DEBUG)
+        # Configura logging da YAML
+        setup_logging("config/logging.yaml")
         
         logger.info("Inizializzazione TradingDNA CLI Framework...")
         
@@ -187,34 +213,30 @@ def main():
         loop = initialize_event_loop()
         
         # Carica configurazione
-        logger.debug("Caricamento configurazione...")
+        logger.info("Caricamento configurazione...")
         try:
-            config = load_system_config()
-            
-            # Configura logging con le impostazioni del sistema
-            logger.debug("Configurazione logging...")
-            setup_logging("config/logging.yaml")
-            
-            logger.debug("Logging configurato da YAML")
+            # Carica configurazione da logging.yaml
+            with open("config/logging.yaml", 'r') as f:
+                config = yaml.safe_load(f)
+                system_config = config.get('system', {})
             
             # Verifica e inizializza i parametri dei geni se non esistono
             if not check_gene_parameters_exist():
-                logger.debug("Inizializzazione parametri dei geni...")
-                initialize_gene_parameters(config)
-                logger.debug("Parametri dei geni inizializzati")
+                logger.info("Inizializzazione parametri dei geni...")
+                initialize_gene_parameters(system_config)
+                logger.info("Parametri dei geni inizializzati")
             
-        except ConfigError as e:
+        except Exception as e:
             logger.error(f"Errore configurazione: {str(e)}")
             logger.info("Utilizzo configurazione predefinita")
-            setup_logging("config/logging.yaml")
         
         # Simula caricamento iniziale
         simulate_loading()
         
         # Crea e mostra il menu principale
-        logger.debug("Creazione menu principale")
+        logger.info("Creazione menu principale")
         menu = setup_main_menu()
-        logger.debug("Menu principale creato, inizio visualizzazione")
+        logger.info("Menu principale creato, inizio visualizzazione")
         menu.show_menu()
         
         logger.info("Chiusura applicazione...")

@@ -1,0 +1,67 @@
+# Configurazione test sistema
+
+evolution_test:
+  # Parametri test evoluzione
+  generations:
+    default: 5
+    min: 1
+    max: 50
+  
+  # Dimensione popolazione test
+  population_size:
+    default: 100
+    min: 50
+    max: 200
+    
+  # Parametri evolutivi test
+  mutation_rate: 0.02
+  selection_pressure: 5
+  generation_interval: 1
+  diversity_threshold: 0.7
+  
+  # Metriche test
+  metrics_weights:
+    total_return: 0.3
+    win_rate: 0.2
+    sharpe_ratio: 0.2
+    max_drawdown: -0.3
+    
+  # Soglie validazione
+  validation:
+    min_improvement: 0.05  # 5% miglioramento minimo
+    min_win_rate: 0.45    # 45% win rate minimo
+    max_drawdown: 0.20    # 20% drawdown massimo
+    min_trades: 10        # Minimo numero trade
+    
+  # Report
+  report:
+    show_gene_distribution: true
+    show_weight_stats: true
+    show_performance_metrics: true
+    show_generation_progress: true
+    
+  # Logging test
+  logging:
+    level: INFO
+    show_progress: true
+    save_report: true
+    report_path: "test_reports/"
+
+  # Dati test
+  test_timeframe: "1h"    # Timeframe per i dati di test
+  test_days: 30          # Numero di giorni di dati storici da generare
+
+  # Configurazione backtest
+  backtest:
+    days: 30             # Giorni di dati per backtest
+    initial_balance: 10000  # Bilancio iniziale
+    commission: 0.001    # Commissione per trade
+    slippage: 0.001     # Slippage per trade
+
+  # Configurazione fitness
+  fitness:
+    weights:
+      total_return: 0.3
+      win_rate: 0.2
+      sharpe_ratio: 0.2
+      max_drawdown: -0.3

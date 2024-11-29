@@ -1,7 +1,7 @@
 """
-Menu Utils
----------
-Funzioni di utilità per la gestione del menu e del sistema.
+Menu Utilities
+------------
+Utility per la gestione del menu CLI.
 """
 
 import logging
@@ -12,6 +12,7 @@ import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
+from typing import Callable, Optional, Any, Dict, List
 from sqlalchemy import create_engine, select, func, text
 from sqlalchemy.orm import Session, sessionmaker
 from tabulate import tabulate
@@ -25,6 +26,127 @@ from data.database.models.models import (
 )
 from .gene_manager import GeneManager
 from .download_manager import DownloadManager
+from cli.logger.log_manager import get_logger
+
+# Setup logger
+logger = get_logger('menu_utils')
+
+def get_user_input(
+    prompt: str,
+    validator: Optional[Callable[[str], bool]] = None,
+    error_msg: str = "Input non valido",
+    default: Optional[str] = None,
+    required: bool = True
+) -> Optional[str]:
+    """
+    Ottiene input dall'utente con validazione.
+    
+    Args:
+        prompt: Messaggio da mostrare
+        validator: Funzione di validazione (opzionale)
+        error_msg: Messaggio di errore
+        default: Valore default (opzionale)
+        required: Se l'input è obbligatorio
+        
+    Returns:
+        str: Input validato o None
+    """
+    while True:
+        # Mostra prompt con default
+        if default:
+            user_input = input(f"{prompt} [{default}]: ").strip()
+            if not user_input:
+                return default
+        else:
+            user_input = input(f"{prompt}").strip()
+            
+        # Gestisci input vuoto
+        if not user_input:
+            if not required:
+                return None
+            print("Input richiesto")
+            continue
+            
+        # Valida input
+        if validator:
+            try:
+                if validator(user_input):
+                    return user_input
+                print(error_msg)
+            except Exception:
+                print(error_msg)
+        else:
+            return user_input
+
+def print_table(data: list, columns: Optional[list] = None) -> str:
+    """
+    Formatta dati in una tabella ASCII.
+    
+    Args:
+        data: Lista di dizionari con i dati
+        columns: Lista colonne da mostrare (opzionale)
+        
+    Returns:
+        str: Tabella formattata
+    """
+    if not data:
+        return "Nessun dato da visualizzare"
+        
+    # Usa tutte le colonne se non specificate
+    if not columns:
+        columns = list(data[0].keys())
+        
+    # Calcola larghezza colonne
+    widths = {col: len(str(col)) for col in columns}
+    for row in data:
+        for col in columns:
+            width = len(str(row.get(col, '')))
+            widths[col] = max(widths[col], width)
+            
+    # Crea separatore
+    separator = '+' + '+'.join('-' * (w + 2) for w in widths.values()) + '+'
+    
+    # Formatta header
+    header = '|' + '|'.join(
+        f" {col:{widths[col]}} "
+        for col in columns
+    ) + '|'
+    
+    # Formatta righe
+    rows = []
+    for row in data:
+        rows.append('|' + '|'.join(
+            f" {str(row.get(col, '')):{widths[col]}} "
+            for col in columns
+        ) + '|')
+        
+    # Unisci tutto
+    table = [
+        separator,
+        header,
+        separator,
+        *rows,
+        separator
+    ]
+    
+    return '\n'.join(table)
+
+def confirm_action(prompt: str) -> bool:
+    """
+    Chiede conferma all'utente.
+    
+    Args:
+        prompt: Messaggio da mostrare
+        
+    Returns:
+        bool: True se confermato, False altrimenti
+    """
+    response = get_user_input(
+        f"{prompt} (s/n): ",
+        validator=lambda x: x.lower() in ['s', 'n'],
+        error_msg="Rispondere 's' o 'n'"
+    )
+    return response and response.lower() == 's'
 
 def force_close_connections():
     """Forza la chiusura di tutte le connessioni al database."""
