@@ -16,8 +16,8 @@ import psycopg2
 from psycopg2 import errors
 from data.database.session_manager import DBSessionManager
 from data.database.models.models import (
-    initialize_database, reset_database, MarketData,
-    Exchange, Symbol
+    initialize_database, reset_database, verify_database_state,
+    MarketData, Exchange, Symbol
 )
 from data.database.models.population_models import (
     Population, Chromosome, ChromosomeGene
@@ -44,7 +44,6 @@ class TestDatabaseInitializer:
             print("[DEBUG] Configurazione test caricata")
             return config['evolution_test']
         except Exception as e:
-            print(f"[DEBUG] ERRORE caricamento config: {str(e)}")
             logger.error(f"Errore caricamento configurazione test: {str(e)}")
             raise
         
@@ -52,63 +51,61 @@ class TestDatabaseInitializer:
         """Inizializza il database per i test."""
         try:
             print("[DEBUG] Inizio inizializzazione database test")
+            
+            # Prima resetta il database
+            print("[DEBUG] Reset database...")
+            reset_database()
+            
+            # Verifica lo stato dopo il reset
+            print("[DEBUG] Verifica stato database...")
+            if not verify_database_state():
+                raise Exception("Verifica stato database fallita dopo il reset")
+            
             with self.db.session() as session:
-                # Prima resetta il database
-                print("[DEBUG] Reset database...")
-                reset_database()
-                
-                # Poi ricrea le tabelle
-                print("[DEBUG] Creazione tabelle...")
-                initialize_database()
-                
-                # Applica gli aggiornamenti delle tabelle
-                print("[DEBUG] Applicazione aggiornamenti tabelle...")
-                with open('data/database/migrations/update_population_tables.sql', 'r') as f:
-                    update_sql = f.read()
-                session.execute(text(update_sql))
-                
-                # Verifica che il database sia vuoto e pronto
-                result = session.execute(text("""
-                    SELECT tablename 
-                    FROM pg_catalog.pg_tables 
-                    WHERE schemaname = 'public'
-                """))
-                tables = result.fetchall()
-                
-                if not tables:
-                    return "Errore: Nessuna tabella creata"
-                
                 # Crea exchange e symbol di test
                 print("[DEBUG] Creazione exchange e symbol di test...")
-                exchange_result = session.execute(text("""
-                    INSERT INTO exchanges (name, is_active, created_at, updated_at)
-                    VALUES ('binance', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    RETURNING id;
-                """))
-                exchange_id = exchange_result.scalar_one()
+                exchange = Exchange(
+                    name='binance',
+                    is_active=True,
+                    api_config={'test': True},
+                    rate_limits={'test': True},
+                    supported_features=['spot']
+                )
+                session.add(exchange)
+                session.flush()  # Per ottenere l'ID
                 
-                symbol_result = session.execute(text("""
-                    INSERT INTO symbols (name, base_asset, quote_asset, exchange_id, is_active, created_at, updated_at)
-                    VALUES ('BTCUSDT', 'BTC', 'USDT', :exchange_id, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    RETURNING id;
-                """), {"exchange_id": exchange_id})
-                symbol_id = symbol_result.scalar_one()
+                symbol = Symbol(
+                    name='BTCUSDT',
+                    base_asset='BTC',
+                    quote_asset='USDT',
+                    exchange_id=exchange.id,
+                    is_active=True,
+                    trading_config={'test': True},
+                    filters={'test': True},
+                    limits={'test': True}
+                )
+                session.add(symbol)
+                session.flush()  # Per ottenere l'ID
                 
                 # Genera dati di mercato di test
                 print("[DEBUG] Generazione dati di mercato di test...")
-                self._generate_test_data(exchange_id, symbol_id, session)
+                self._generate_test_data(exchange.id, symbol.id, session)
                 
                 # Commit finale
                 print("[DEBUG] Commit finale...")
                 session.commit()
                 
+                # Verifica finale
+                print("[DEBUG] Verifica finale...")
+                if not verify_database_state():
+                    raise Exception("Verifica finale del database fallita")
+                
                 print("[DEBUG] Database test inizializzato con successo")
-                logger.info(f"Database inizializzato con {len(tables)} tabelle e dati di test")
+                logger.info("Database test inizializzato con successo")
                 return "Database test inizializzato con successo"
                 
         except Exception as e:
             error_msg = f"Errore inizializzazione database: {str(e)}"
-            print(f"[DEBUG] {error_msg}")
             logger.error(error_msg)
             return error_msg
     
@@ -121,12 +118,9 @@ class TestDatabaseInitializer:
             days = self.test_config['test_days']
             timeframe = self.test_config['test_timeframe']
             
-            print(f"[DEBUG] Generazione {days} giorni di dati con timeframe {timeframe}")
-            
             # Calcola numero candele
             candles_per_day = 24  # Per timeframe 1h
             total_candles = days * candles_per_day
-            print(f"[DEBUG] Generazione {total_candles} candele ({candles_per_day} candele/giorno)")
             
             # Genera le candele in batch di 100
             start_time = datetime.now() - timedelta(days=days)
@@ -134,7 +128,7 @@ class TestDatabaseInitializer:
             
             for i in range(0, total_candles, 100):
                 batch_size = min(100, total_candles - i)
-                values = []
+                market_data_batch = []
                 current_time = start_time + timedelta(hours=i)
                 
                 for j in range(batch_size):
@@ -148,27 +142,31 @@ class TestDatabaseInitializer:
                     volume = abs(np.random.normal(100, 30))
                     
                     timestamp = current_time + timedelta(hours=j)
-                    values.append(
-                        f"({exchange_id}, {symbol_id}, '{timeframe}', "
-                        f"'{timestamp}', {price}, {high}, {low}, {price}, {volume}, true)"
+                    
+                    # Crea oggetto MarketData con i nuovi campi JSON
+                    market_data = MarketData(
+                        exchange_id=exchange_id,
+                        symbol_id=symbol_id,
+                        timeframe=timeframe,
+                        timestamp=timestamp,
+                        open=price,
+                        high=high,
+                        low=low,
+                        close=price,
+                        volume=volume,
+                        is_valid=True,
+                        technical_indicators={},
+                        pattern_recognition={},
+                        market_metrics={}
                     )
+                    market_data_batch.append(market_data)
                 
                 # Inserisci il batch
-                sql = text(f"""
-                    INSERT INTO market_data (
-                        exchange_id, symbol_id, timeframe, timestamp,
-                        open, high, low, close, volume, is_valid
-                    )
-                    VALUES {','.join(values)};
-                """)
-                
-                session.execute(sql)
-                print(f"[DEBUG] Inserite {batch_size} candele")
+                session.bulk_save_objects(market_data_batch)
+                session.flush()
             
-            print(f"[DEBUG] Generati {total_candles} candele di test")
             logger.info(f"Generati {total_candles} candele di test")
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE generazione dati test: {str(e)}")
             logger.error(f"Errore generazione dati test: {str(e)}")
             raise

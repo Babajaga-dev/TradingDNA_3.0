@@ -27,16 +27,19 @@ gene:
   
   moving_average:
     default:
-      short_period: 9
-      long_period: 21
+      period: 20
+      type: "SMA"
+      distance: 0.02
       weight: 1.0
     constraints:
-      short_period:
-        min: 2
-        max: 50
-      long_period:
+      period:
         min: 5
         max: 200
+      type:
+        types: ["SMA", "EMA"]
+      distance:
+        min: 0.01
+        max: 0.1
       weight:
         min: 0.1
         max: 5.0

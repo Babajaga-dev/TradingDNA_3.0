@@ -36,19 +36,19 @@ def retry_on_db_lock(func):
         
         for attempt in range(MAX_RETRIES):
             try:
-                print(f"[DEBUG] Tentativo {attempt+1}/{MAX_RETRIES} di esecuzione {func.__name__}")
+                #print(f"[DEBUG] Tentativo {attempt+1}/{MAX_RETRIES} di esecuzione {func.__name__}")
                 return func(*args, **kwargs)
             except OperationalError as e:
                 if "database is locked" in str(e):
                     last_error = e
                     if attempt < MAX_RETRIES - 1:
-                        print(f"[DEBUG] Database LOCKED in {func.__name__}! Retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                        #print(f"[DEBUG] Database LOCKED in {func.__name__}! Retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
                         logger.warning(f"Database locked, retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
                         time.sleep(delay)
                         delay = min(delay * 2 + random.random(), MAX_RETRY_DELAY)
                         continue
                 raise
-        print(f"[DEBUG] MAX RETRY RAGGIUNTI per {func.__name__}! Ultimo errore: {str(last_error)}")
+        #print(f"[DEBUG] MAX RETRY RAGGIUNTI per {func.__name__}! Ultimo errore: {str(last_error)}")
         logger.error(f"Max retries ({MAX_RETRIES}) raggiunti per database lock")
         raise last_error
     return wrapper
@@ -66,7 +66,7 @@ class MetricsCalculator(PopulationBaseManager):
         """Calcola le metriche di performance."""
         try:
             print("\n[DEBUG] === INIZIO CALCOLO METRICHE ===")
-            print(f"[DEBUG] Numero operazioni da valutare: {len(performance)}")
+            #print(f"[DEBUG] Numero operazioni da valutare: {len(performance)}")
             
             if not performance:
                 print("[DEBUG] Nessuna operazione da valutare, ritorno metriche default")
@@ -85,10 +85,10 @@ class MetricsCalculator(PopulationBaseManager):
             wins = [pnl for pnl in pnls if pnl > 0]
             losses = [pnl for pnl in pnls if pnl <= 0]
             
-            print(f"[DEBUG] Statistiche operazioni:")
-            print(f"[DEBUG] - Totale: {len(pnls)}")
-            print(f"[DEBUG] - Vincenti: {len(wins)}")
-            print(f"[DEBUG] - Perdenti: {len(losses)}")
+            #print(f"[DEBUG] Statistiche operazioni:")
+            #print(f"[DEBUG] - Totale: {len(pnls)}")
+            #print(f"[DEBUG] - Vincenti: {len(wins)}")
+            #print(f"[DEBUG] - Perdenti: {len(losses)}")
             
             print("[DEBUG] Calcolo metriche...")
             metrics = {
@@ -102,19 +102,19 @@ class MetricsCalculator(PopulationBaseManager):
             }
             
             print("\n[DEBUG] Metriche calcolate:")
-            print(f"[DEBUG] - Return totale: {metrics['total_return']:.2%}")
-            print(f"[DEBUG] - Win rate: {metrics['win_rate']:.2%}")
-            print(f"[DEBUG] - Media vincite: {metrics['avg_win']:.2%}")
-            print(f"[DEBUG] - Media perdite: {metrics['avg_loss']:.2%}")
-            print(f"[DEBUG] - Sharpe ratio: {metrics['sharpe_ratio']:.2f}")
-            print(f"[DEBUG] - Max drawdown: {metrics['max_drawdown']:.2%}")
-            print(f"[DEBUG] - Numero trade: {metrics['trades']}")
+            #print(f"[DEBUG] - Return totale: {metrics['total_return']:.2%}")
+            #print(f"[DEBUG] - Win rate: {metrics['win_rate']:.2%}")
+            #print(f"[DEBUG] - Media vincite: {metrics['avg_win']:.2%}")
+            #print(f"[DEBUG] - Media perdite: {metrics['avg_loss']:.2%}")
+            #print(f"[DEBUG] - Sharpe ratio: {metrics['sharpe_ratio']:.2f}")
+            #print(f"[DEBUG] - Max drawdown: {metrics['max_drawdown']:.2%}")
+            #print(f"[DEBUG] - Numero trade: {metrics['trades']}")
             
             print("[DEBUG] === FINE CALCOLO METRICHE ===\n")
             return metrics
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE calcolo metriche: {str(e)}")
+            #print(f"[DEBUG] ERRORE calcolo metriche: {str(e)}")
             logger.error(f"Errore calcolo metriche: {str(e)}")
             return {
                 'total_return': 0.0,
@@ -146,11 +146,11 @@ class MetricsCalculator(PopulationBaseManager):
                 dd = (peak - value) / peak if peak != 0 else 0
                 max_dd = max(max_dd, dd)
                 
-            print(f"[DEBUG] Maximum drawdown calcolato: {max_dd:.2%}")
+            #print(f"[DEBUG] Maximum drawdown calcolato: {max_dd:.2%}")
             return float(max_dd)
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE calcolo drawdown: {str(e)}")
+            #print(f"[DEBUG] ERRORE calcolo drawdown: {str(e)}")
             logger.error(f"Errore calcolo drawdown: {str(e)}")
             return 0.0
         
@@ -160,7 +160,7 @@ class MetricsCalculator(PopulationBaseManager):
             print("[DEBUG] Inizio combinazione metriche in fitness")
             # Pesi per ogni metrica
             weights = self.test_config['fitness']['weights']
-            print(f"[DEBUG] Pesi metriche: {weights}")
+            #print(f"[DEBUG] Pesi metriche: {weights}")
             
             # Normalizza e combina
             print("[DEBUG] Combinazione metriche pesate...")
@@ -171,11 +171,11 @@ class MetricsCalculator(PopulationBaseManager):
             )
             
             fitness = max(0.0, float(fitness))  # Non permettiamo fitness negativo
-            print(f"[DEBUG] Fitness finale calcolato: {fitness:.4f}")
+            #print(f"[DEBUG] Fitness finale calcolato: {fitness:.4f}")
             return fitness
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE combinazione metriche: {str(e)}")
+            #print(f"[DEBUG] ERRORE combinazione metriche: {str(e)}")
             logger.error(f"Errore combinazione metriche: {str(e)}")
             return 0.0
         
@@ -206,18 +206,18 @@ class MetricsCalculator(PopulationBaseManager):
                     try:
                         session.refresh(chromosome)
                     except Exception as e:
-                        print(f"[DEBUG] Errore refresh cromosoma: {str(e)}")
+                        #print(f"[DEBUG] Errore refresh cromosoma: {str(e)}")
                         return
                 
                 active_genes = [g for g in chromosome.genes if g and g.is_active]
                 total_genes = len(active_genes)
                 
-                print(f"[DEBUG] Aggiornamento contributo performance per {total_genes} geni attivi")
+                #print(f"[DEBUG] Aggiornamento contributo performance per {total_genes} geni attivi")
                 
                 # Processa i geni in batch
                 for i in range(0, total_genes, GENE_BATCH_SIZE):
                     batch = active_genes[i:i + GENE_BATCH_SIZE]
-                    print(f"[DEBUG] Processing batch di geni {i+1}-{min(i+GENE_BATCH_SIZE, total_genes)}")
+                    #print(f"[DEBUG] Processing batch di geni {i+1}-{min(i+GENE_BATCH_SIZE, total_genes)}")
                     
                     # Aggiorna il contributo per ogni gene nel batch
                     for gene in batch:
@@ -227,11 +227,11 @@ class MetricsCalculator(PopulationBaseManager):
                                 try:
                                     session.refresh(gene)
                                 except Exception as e:
-                                    print(f"[DEBUG] Skip gene {gene.chromosome_gene_id}: {str(e)}")
+                                    #print(f"[DEBUG] Skip gene {gene.chromosome_gene_id}: {str(e)}")
                                     continue
                             gene.performance_contribution = gene.weight * fitness
                         except Exception as e:
-                            print(f"[DEBUG] Skip gene {gene.chromosome_gene_id}: {str(e)}")
+                            #print(f"[DEBUG] Skip gene {gene.chromosome_gene_id}: {str(e)}")
                             continue
                     
                     # Flush dopo ogni batch
@@ -240,7 +240,7 @@ class MetricsCalculator(PopulationBaseManager):
                             print("[DEBUG] Flush sessione dopo batch")
                             session.flush()
                         except Exception as e:
-                            print(f"[DEBUG] Errore flush batch: {str(e)}")
+                            #print(f"[DEBUG] Errore flush batch: {str(e)}")
                             continue
             
             if session is not None:
@@ -250,11 +250,11 @@ class MetricsCalculator(PopulationBaseManager):
                     session.flush()
                     print("[DEBUG] Modifiche salvate")
                 except Exception as e:
-                    print(f"[DEBUG] Errore salvataggio finale: {str(e)}")
+                    logger.error(f"Errore salvataggio finale: {str(e)}")
             
-            print(f"[DEBUG] === FINE AGGIORNAMENTO METRICHE CROMOSOMA ===\n")
+            #print(f"[DEBUG] === FINE AGGIORNAMENTO METRICHE CROMOSOMA ===\n")
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE aggiornamento metriche: {str(e)}")
+            #print(f"[DEBUG] ERRORE aggiornamento metriche: {str(e)}")
             logger.error(f"Errore aggiornamento metriche: {str(e)}")
             raise

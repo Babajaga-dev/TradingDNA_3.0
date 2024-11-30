@@ -9,11 +9,14 @@ import asyncio
 import logging
 import sys
 import platform
+import json
 from typing import Dict, List, Any, Optional, Set, Tuple, Callable
 from datetime import datetime, timedelta
 import pytz
 from dataclasses import dataclass
 import time
+import numpy as np
+from scipy import stats
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
@@ -21,7 +24,6 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
 from ..database.session_manager import DBSessionManager
 from ..database.models import (
     Exchange, Symbol, MarketData,
-    PerformanceMetrics, RiskMetrics,
     initialize_database
 )
 from ..connectors import (
@@ -497,27 +499,58 @@ class DataDownloader:
                         for i in range(1, len(data))
                     ]
                     
-                    market_returns = returns
+                    # Calcola metriche di performance
+                    total_return = (prices[-1] / prices[0]) - 1
+                    annualized_return = ((1 + total_return) ** (252 / len(returns))) - 1
+                    volatility = np.std(returns) * np.sqrt(252)
+                    sharpe_ratio = (np.mean(returns) / np.std(returns)) * np.sqrt(252) if np.std(returns) != 0 else 0
                     
-                    perf = PerformanceMetrics(
-                        exchange_id=exchange_id,
-                        symbol_id=symbol_id,
-                        timeframe=timeframe,
-                        start_time=data[0].timestamp,
-                        end_time=data[-1].timestamp
-                    )
-                    perf.calculate_metrics(prices, volumes)
-                    session.add(perf)
+                    # Calcola metriche di rischio
+                    var_95 = np.percentile(returns, 5)
+                    var_99 = np.percentile(returns, 1)
+                    es_95 = np.mean([r for r in returns if r <= var_95])
+                    es_99 = np.mean([r for r in returns if r <= var_99])
                     
-                    risk = RiskMetrics(
-                        exchange_id=exchange_id,
-                        symbol_id=symbol_id,
-                        timeframe=timeframe,
-                        start_time=data[0].timestamp,
-                        end_time=data[-1].timestamp
-                    )
-                    risk.calculate_metrics(returns, market_returns, volumes[1:])
-                    session.add(risk)
+                    # Calcola drawdown
+                    cumulative = np.cumprod(1 + np.array(returns))
+                    running_max = np.maximum.accumulate(cumulative)
+                    drawdowns = cumulative / running_max - 1
+                    max_drawdown = float(np.min(drawdowns))
+                    
+                    # Prepara i dizionari delle metriche
+                    metrics = {
+                        'performance': {
+                            'total_return': float(total_return),
+                            'annualized_return': float(annualized_return),
+                            'sharpe_ratio': float(sharpe_ratio),
+                            'volatility': float(volatility)
+                        },
+                        'risk': {
+                            'value_at_risk_95': float(var_95),
+                            'value_at_risk_99': float(var_99),
+                            'expected_shortfall_95': float(es_95),
+                            'expected_shortfall_99': float(es_99),
+                            'max_drawdown': float(max_drawdown)
+                        }
+                    }
+                    
+                    indicators = {}  # Placeholder per futuri indicatori tecnici
+                    
+                    # Aggiorna il database
+                    stmt = text("""
+                        UPDATE market_data 
+                        SET market_metrics = cast(:metrics as jsonb),
+                            technical_indicators = cast(:indicators as jsonb)
+                        WHERE id = :id
+                    """)
+                    
+                    session.execute(stmt, {
+                        'id': data[-1].id,
+                        'metrics': json.dumps(metrics),
+                        'indicators': json.dumps(indicators)
+                    })
+                
+                session.commit()
                 
         except SQLAlchemyError as e:
             self.logger.error(f"Errore aggiornamento metriche: {str(e)}")

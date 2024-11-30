@@ -32,8 +32,8 @@ class TradingSimulator:
         
         try:
             print("\n[DEBUG] === INIZIO SIMULAZIONE TRADING ===")
-            print(f"[DEBUG] Numero segnali disponibili: {len(signals)}")
-            print(f"[DEBUG] Numero candele disponibili: {len(market_data)}")
+            #print(f"[DEBUG] Numero segnali disponibili: {len(signals)}")
+            #print(f"[DEBUG] Numero candele disponibili: {len(market_data)}")
             
             start_time = time.time()
             trades_count = {'long': 0, 'short': 0}
@@ -47,31 +47,31 @@ class TradingSimulator:
                 
                 signal = signals.get(timestamp, 0.0)
                 
-                print(f"\n[DEBUG] Candela {i}/{len(market_data)} - {timestamp}")
-                print(f"[DEBUG] Prezzo: {close:.2f}, Segnale: {signal:.2f}")
-                print(f"[DEBUG] Posizione corrente: {position}")
+            #    print(f"\n[DEBUG] Candela {i}/{len(market_data)} - {timestamp}")
+            #    #print(f"[DEBUG] Prezzo: {close:.2f}, Segnale: {signal:.2f}")
+            #    #print(f"[DEBUG] Posizione corrente: {position}")
                 
                 # Logica trading semplificata
                 if position is None and signal > 0.5:
                     # Apri long
-                    print(f"[DEBUG] Apertura LONG a {close:.2f}")
+            #       #print(f"[DEBUG] Apertura LONG a {close:.2f}")
                     position = 'long'
                     entry_price = close
                     trades_count['long'] += 1
                     
                 elif position is None and signal < -0.5:
                     # Apri short
-                    print(f"[DEBUG] Apertura SHORT a {close:.2f}")
+            #       #print(f"[DEBUG] Apertura SHORT a {close:.2f}")
                     position = 'short'
                     entry_price = close
                     trades_count['short'] += 1
                     
                 elif position == 'long' and signal < 0:
                     # Chiudi long
-                    print(f"[DEBUG] Chiusura LONG: Entry={entry_price:.2f}, Exit={close:.2f}")
+            #       #print(f"[DEBUG] Chiusura LONG: Entry={entry_price:.2f}, Exit={close:.2f}")
                     pnl = (close - entry_price) / entry_price
                     current_pnl += pnl
-                    print(f"[DEBUG] PnL operazione: {pnl:.2%}")
+            #       #print(f"[DEBUG] PnL operazione: {pnl:.2%}")
                     
                     performance.append({
                         'timestamp': timestamp,
@@ -84,10 +84,10 @@ class TradingSimulator:
                     
                 elif position == 'short' and signal > 0:
                     # Chiudi short
-                    print(f"[DEBUG] Chiusura SHORT: Entry={entry_price:.2f}, Exit={close:.2f}")
+            #       #print(f"[DEBUG] Chiusura SHORT: Entry={entry_price:.2f}, Exit={close:.2f}")
                     pnl = (entry_price - close) / entry_price
                     current_pnl += pnl
-                    print(f"[DEBUG] PnL operazione: {pnl:.2%}")
+            #       #print(f"[DEBUG] PnL operazione: {pnl:.2%}")
                     
                     performance.append({
                         'timestamp': timestamp,
@@ -97,8 +97,8 @@ class TradingSimulator:
                         'pnl': pnl
                     })
                     position = None
-                else:
-                    print("[DEBUG] Nessuna azione per questa candela")
+            #    else:
+            #       print("[DEBUG] Nessuna azione per questa candela")
             
             # Statistiche finali
             sim_time = time.time() - start_time
@@ -106,16 +106,16 @@ class TradingSimulator:
             avg_pnl = current_pnl / total_trades if total_trades > 0 else 0
             
             print("\n[DEBUG] === FINE SIMULAZIONE TRADING ===")
-            print(f"[DEBUG] Tempo simulazione: {sim_time:.2f}s")
-            print(f"[DEBUG] Trade totali: {total_trades}")
-            print(f"[DEBUG] - Long: {trades_count['long']}")
-            print(f"[DEBUG] - Short: {trades_count['short']}")
-            print(f"[DEBUG] PnL totale: {current_pnl:.2%}")
-            print(f"[DEBUG] PnL medio per trade: {avg_pnl:.2%}")
+            #print(f"[DEBUG] Tempo simulazione: {sim_time:.2f}s")
+            #print(f"[DEBUG] Trade totali: {total_trades}")
+            #print(f"[DEBUG] - Long: {trades_count['long']}")
+            #print(f"[DEBUG] - Short: {trades_count['short']}")
+            #print(f"[DEBUG] PnL totale: {current_pnl:.2%}")
+            #print(f"[DEBUG] PnL medio per trade: {avg_pnl:.2%}")
             
             return performance
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE simulazione trading: {str(e)}")
+            #print(f"[DEBUG] ERRORE simulazione trading: {str(e)}")
             logger.error(f"Errore simulazione trading: {str(e)}")
             return []

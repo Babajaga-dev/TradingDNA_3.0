@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from data.database.models.population_models import (
     Population, Chromosome, ChromosomeGene, EvolutionHistory
 )
+from data.database.models.models import verify_database_state
 from cli.menu.population.population_base import PopulationBaseManager
 from cli.logger.log_manager import get_logger
 from cli.progress.indicators import ProgressBar
@@ -70,7 +71,7 @@ class EvolutionTester(PopulationBaseManager):
             if not population_data:
                 return None
                 
-            # Crea l'oggetto Population
+            # Crea l'oggetto Population con i nuovi campi JSON
             population = Population(
                 population_id=population_data.population_id,
                 name=population_data.name,
@@ -84,25 +85,15 @@ class EvolutionTester(PopulationBaseManager):
                 generation_interval=population_data.generation_interval,
                 diversity_threshold=population_data.diversity_threshold,
                 timeframe=population_data.timeframe,
-                symbol_id=population_data.symbol_id
+                symbol_id=population_data.symbol_id,
+                evolution_config=population_data.evolution_config or {},
+                performance_thresholds=population_data.performance_thresholds or {},
+                optimization_settings=population_data.optimization_settings or {}
             )
             
             # Carica i cromosomi
             chromosomes_result = session.execute(text("""
-                SELECT 
-                    chromosome_id,
-                    population_id,
-                    fingerprint,
-                    generation,
-                    age,
-                    created_at,
-                    parent1_id,
-                    parent2_id,
-                    status,
-                    performance_metrics,
-                    weight_distribution,
-                    last_test_date,
-                    test_results
+                SELECT *
                 FROM chromosomes 
                 WHERE population_id = :population_id
             """), {"population_id": population_id})
@@ -111,44 +102,31 @@ class EvolutionTester(PopulationBaseManager):
             chromosome_ids = []
             
             for c in chromosomes_result:
-                # Converti i campi JSON in stringhe se sono dizionari
-                performance_metrics = json.dumps(c.performance_metrics) if isinstance(c.performance_metrics, dict) else c.performance_metrics
-                weight_distribution = json.dumps(c.weight_distribution) if isinstance(c.weight_distribution, dict) else c.weight_distribution
-                test_results = json.dumps(c.test_results) if isinstance(c.test_results, dict) else c.test_results
-                
-                chromosome_dict = {
-                    'chromosome_id': c.chromosome_id,
-                    'population_id': c.population_id,
-                    'fingerprint': c.fingerprint,
-                    'generation': c.generation,
-                    'age': c.age,
-                    'created_at': str(c.created_at) if c.created_at else None,
-                    'parent1_id': c.parent1_id,
-                    'parent2_id': c.parent2_id,
-                    'status': c.status,
-                    'performance_metrics': performance_metrics,
-                    'weight_distribution': weight_distribution,
-                    'last_test_date': str(c.last_test_date) if c.last_test_date else None,
-                    'test_results': test_results
-                }
-                chromosome = Chromosome(**chromosome_dict)
+                # Crea oggetto Chromosome con i nuovi campi JSON
+                chromosome = Chromosome(
+                    chromosome_id=c.chromosome_id,
+                    population_id=c.population_id,
+                    fingerprint=c.fingerprint,
+                    generation=c.generation,
+                    age=c.age,
+                    created_at=c.created_at,
+                    parent1_id=c.parent1_id,
+                    parent2_id=c.parent2_id,
+                    status=c.status,
+                    performance_metrics=c.performance_metrics or {},
+                    weight_distribution=c.weight_distribution or {},
+                    test_results=c.test_results or {},
+                    fitness_history=c.fitness_history or [],
+                    mutation_stats=c.mutation_stats or {},
+                    last_test_date=c.last_test_date
+                )
                 population.chromosomes.append(chromosome)
                 chromosome_ids.append(c.chromosome_id)
             
             if chromosome_ids:
                 # Carica i geni per tutti i cromosomi
                 genes_result = session.execute(text("""
-                    SELECT 
-                        chromosome_gene_id,
-                        chromosome_id,
-                        gene_type,
-                        parameters,
-                        weight,
-                        is_active,
-                        performance_contribution,
-                        last_mutation_date,
-                        mutation_history,
-                        validation_rules
+                    SELECT *
                     FROM chromosome_genes 
                     WHERE chromosome_id = ANY(:chromosome_ids)
                 """), {"chromosome_ids": chromosome_ids})
@@ -156,47 +134,43 @@ class EvolutionTester(PopulationBaseManager):
                 # Organizza i geni per chromosome_id
                 genes_by_chromosome = {}
                 for g in genes_result:
-                    # Converti i campi JSON in stringhe se sono dizionari
-                    parameters = json.dumps(g.parameters) if isinstance(g.parameters, dict) else g.parameters
-                    mutation_history = json.dumps(g.mutation_history) if isinstance(g.mutation_history, dict) else g.mutation_history
-                    validation_rules = json.dumps(g.validation_rules) if isinstance(g.validation_rules, dict) else g.validation_rules
-                    
-                    gene_dict = {
-                        'chromosome_gene_id': g.chromosome_gene_id,
-                        'chromosome_id': g.chromosome_id,
-                        'gene_type': g.gene_type,
-                        'parameters': parameters,
-                        'weight': g.weight,
-                        'is_active': g.is_active,
-                        'performance_contribution': g.performance_contribution,
-                        'last_mutation_date': str(g.last_mutation_date) if g.last_mutation_date else None,
-                        'mutation_history': mutation_history,
-                        'validation_rules': validation_rules
-                    }
+                    # Crea oggetto ChromosomeGene con i nuovi campi JSON
+                    gene = ChromosomeGene(
+                        chromosome_gene_id=g.chromosome_gene_id,
+                        chromosome_id=g.chromosome_id,
+                        gene_type=g.gene_type,
+                        parameters=g.parameters or {},
+                        weight=g.weight,
+                        is_active=g.is_active,
+                        performance_contribution=g.performance_contribution,
+                        last_mutation_date=g.last_mutation_date,
+                        mutation_history=g.mutation_history or [],
+                        validation_rules=g.validation_rules or {},
+                        optimization_history=g.optimization_history or [],
+                        performance_metrics=g.performance_metrics or {}
+                    )
                     
                     if g.chromosome_id not in genes_by_chromosome:
                         genes_by_chromosome[g.chromosome_id] = []
-                    genes_by_chromosome[g.chromosome_id].append(gene_dict)
+                    genes_by_chromosome[g.chromosome_id].append(gene)
                 
                 # Assegna i geni ai rispettivi cromosomi
                 for chromosome in population.chromosomes:
-                    chromosome.genes = []
-                    if chromosome.chromosome_id in genes_by_chromosome:
-                        for gene_dict in genes_by_chromosome[chromosome.chromosome_id]:
-                            gene = ChromosomeGene(**gene_dict)
-                            chromosome.genes.append(gene)
+                    chromosome.genes = genes_by_chromosome.get(chromosome.chromosome_id, [])
             
             return population
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE caricamento popolazione: {str(e)}")
             logger.error(f"Errore caricamento popolazione: {str(e)}")
             return None
 
     def run_test(self, population_id: int, generations: int = 5, session: Optional[Session] = None) -> str:
         """Esegue un test completo del sistema di evoluzione."""
         try:
-            print(f"[DEBUG] Avvio test per popolazione {population_id}")
+            # Verifica stato database prima del test
+            if not verify_database_state():
+                raise Exception("Stato database non valido prima del test")
+                
             if session is None:
                 with self.session_scope() as session:
                     return self._run_test_internal(population_id, generations, session)
@@ -204,7 +178,6 @@ class EvolutionTester(PopulationBaseManager):
                 return self._run_test_internal(population_id, generations, session)
                 
         except Exception as e:
-            print(f"[DEBUG] ERRORE in run_test: {str(e)}")
             logger.error(f"Errore test evoluzione: {str(e)}")
             raise
 
@@ -215,8 +188,6 @@ class EvolutionTester(PopulationBaseManager):
             population = self._get_population(population_id, session)
             if not population:
                 return "Popolazione non trovata"
-                
-            print(f"[DEBUG] Test evoluzione per popolazione {population.name}")
             
             # Carica dati di mercato
             print("[DEBUG] Caricamento dati di mercato...")
@@ -260,12 +231,14 @@ class EvolutionTester(PopulationBaseManager):
                     gen_stats = self._calculate_generation_stats(survivors, session)
                     evolution_stats.append(gen_stats)
                     
+                    # Verifica stato dopo ogni generazione
+                    if not verify_database_state():
+                        raise Exception(f"Stato database non valido dopo generazione {i+1}")
+                    
                     session.commit()
-                    print(f"[DEBUG] Generazione {i+1} completata")
                     
                 except Exception as e:
                     session.rollback()
-                    print(f"[DEBUG] ERRORE in generazione {i+1}: {str(e)}")
                     raise
             
             # Calcola statistiche finali
@@ -278,7 +251,6 @@ class EvolutionTester(PopulationBaseManager):
             return report
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE in run_test_internal: {str(e)}")
             logger.error(f"Errore in run_test_internal: {str(e)}")
             raise
             
@@ -295,6 +267,7 @@ class EvolutionTester(PopulationBaseManager):
                 FROM chromosomes
                 WHERE population_id = :population_id
                 AND status = 'active'
+                AND performance_metrics IS NOT NULL
             """), {"population_id": population_id})
             
             stats = result.fetchone()
@@ -327,7 +300,7 @@ class EvolutionTester(PopulationBaseManager):
                     'weights': {'min': 0.0, 'max': 0.0, 'avg': 0.0}
                 }
             
-            # Prima query per statistiche fitness e pesi
+            # Query per statistiche fitness e pesi
             result = session.execute(text("""
                 SELECT 
                     min((c.performance_metrics->>'fitness')::float) as min_fitness,
@@ -339,23 +312,29 @@ class EvolutionTester(PopulationBaseManager):
                 FROM chromosomes c
                 LEFT JOIN chromosome_genes g ON c.chromosome_id = g.chromosome_id
                 WHERE c.chromosome_id = ANY(:chromosome_ids)
+                AND c.performance_metrics IS NOT NULL
             """), {"chromosome_ids": chromosome_ids})
             
             stats = result.fetchone()
             
-            # Seconda query per conteggio geni
+            # Query per conteggio geni
             gene_result = session.execute(text("""
                 SELECT 
                     g.gene_type,
-                    count(*) as gene_count
+                    count(*) as gene_count,
+                    avg((g.performance_metrics->>'contribution')::float) as avg_contribution
                 FROM chromosome_genes g
                 WHERE g.chromosome_id = ANY(:chromosome_ids)
+                AND g.is_active = true
                 GROUP BY g.gene_type
             """), {"chromosome_ids": chromosome_ids})
             
-            gene_counts = {}
+            gene_stats = {}
             for row in gene_result:
-                gene_counts[row.gene_type] = row.gene_count
+                gene_stats[row.gene_type] = {
+                    'count': row.gene_count,
+                    'contribution': row.avg_contribution or 0.0
+                }
             
             return {
                 'fitness': {
@@ -363,7 +342,7 @@ class EvolutionTester(PopulationBaseManager):
                     'max': stats.max_fitness or 0.0,
                     'avg': stats.avg_fitness or 0.0
                 },
-                'genes': gene_counts,
+                'genes': gene_stats,
                 'weights': {
                     'min': stats.min_weight or 0.0,
                     'max': stats.max_weight or 0.0,
@@ -384,8 +363,10 @@ class EvolutionTester(PopulationBaseManager):
         try:
             # Calcola il miglior fitness dai sopravvissuti
             best_fitness = max(
-                float(json.loads(s.performance_metrics).get('fitness', 0) if isinstance(s.performance_metrics, str) else s.performance_metrics.get('fitness', 0))
-                for s in survivors if s and s.performance_metrics
+                (s.performance_metrics.get('fitness', 0.0) if isinstance(s.performance_metrics, dict)
+                 else json.loads(s.performance_metrics).get('fitness', 0.0) if s.performance_metrics
+                 else 0.0)
+                for s in survivors
             )
             
             # Aggiorna la popolazione
@@ -403,10 +384,9 @@ class EvolutionTester(PopulationBaseManager):
             })
             
             updated = result.fetchone()
-            print(f"[DEBUG] Popolazione aggiornata: gen={updated.current_generation}, score={updated.performance_score}")
+            logger.debug(f"Popolazione aggiornata: gen={updated.current_generation}, score={updated.performance_score}")
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE aggiornamento popolazione: {str(e)}")
             logger.error(f"Errore aggiornamento popolazione: {str(e)}")
             raise
             
@@ -438,8 +418,8 @@ class EvolutionTester(PopulationBaseManager):
                 f"max={stats['fitness']['max']:.2f}, "
                 f"avg={stats['fitness']['avg']:.2f}",
                 "- Distribuzione Geni:",
-                *[f"  * {gene}: {count}" 
-                  for gene, count in stats['genes'].items()],
+                *[f"  * {gene}: count={data['count']}, contribution={data['contribution']:.2f}%" 
+                  for gene, data in stats['genes'].items()],
                 f"- Pesi: min={stats['weights']['min']:.2f}, "
                 f"max={stats['weights']['max']:.2f}, "
                 f"avg={stats['weights']['avg']:.2f}"
@@ -464,7 +444,6 @@ class EvolutionTester(PopulationBaseManager):
     def _save_report(self, population: Population, report: str) -> None:
         """Salva il report su file."""
         try:
-            print(f"[DEBUG] Salvataggio report per popolazione {population.name}")
             report_dir = Path('test_reports')
             report_dir.mkdir(parents=True, exist_ok=True)
             
@@ -474,9 +453,7 @@ class EvolutionTester(PopulationBaseManager):
             with open(report_dir / filename, 'w') as f:
                 f.write(report)
                 
-            print(f"[DEBUG] Report salvato in {filename}")
             logger.info(f"Report salvato in {filename}")
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE salvataggio report: {str(e)}")
             logger.error(f"Errore salvataggio report: {str(e)}")

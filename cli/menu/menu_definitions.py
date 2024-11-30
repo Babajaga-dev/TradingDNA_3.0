@@ -9,7 +9,7 @@ import nest_asyncio
 from data.collection.downloader import DataDownloader, DownloadConfig
 from data.database.models.models import (
     initialize_gene_parameters,
-    MarketData, Symbol, Exchange, SYNC_DATABASE_URL,
+    MarketData, Symbol, Exchange,
     initialize_database
 )
 from data.database.session_manager import DBSessionManager

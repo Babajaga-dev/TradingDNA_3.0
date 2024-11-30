@@ -80,14 +80,17 @@
   - [x] Generazione fingerprint
 - [x] Mutation Manager
   - [x] Mutazione geni
-  - [x] Mutazione pesi
+  - [x] Mutazione pesi (0.1-5.0)
   - [x] Mutazione parametri
   - [x] Storia mutazioni
+  - [x] Validazione range pesi
 - [x] Fitness Calculator
   - [x] Simulazione trading
   - [x] Calcolo metriche
   - [x] Valutazione performance
   - [x] Contributo geni
+  - [x] Gestione errori sessione
+  - [x] Gestione JSON metriche
 - [x] Menu Evoluzione
   - [x] Avvio evoluzione
   - [x] Stop evoluzione

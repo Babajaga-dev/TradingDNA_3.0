@@ -6,12 +6,13 @@ Script per migrare i dati da SQLite a PostgreSQL.
 
 import os
 import sys
-import time
+from datetime import datetime, timezone
 from urllib.parse import urlparse
-from sqlalchemy import create_engine, text, MetaData, Table, inspect
-from sqlalchemy.orm import sessionmaker
 import psycopg2
 import yaml
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.schema import CreateTable
 
 def load_config():
     """Carica la configurazione del database."""
@@ -59,22 +60,6 @@ def create_postgres_db():
         print(f"Errore creazione database: {str(e)}")
         sys.exit(1)
 
-def execute_sql_file(conn, filename):
-    """Esegue uno script SQL da file."""
-    try:
-        cur = conn.cursor()
-        with open(filename, 'r') as f:
-            sql = f.read()
-            cur.execute(sql)
-        conn.commit()
-        print(f"Script {filename} eseguito con successo")
-    except Exception as e:
-        print(f"Errore esecuzione {filename}: {str(e)}")
-        conn.rollback()
-        raise
-    finally:
-        cur.close()
-
 def reset_database(conn):
     """Resetta il database eliminando tutte le tabelle."""
     try:
@@ -117,136 +102,152 @@ def setup_postgres_schema():
         print("\nReset database...")
         reset_database(conn)
         
-        # Esegue script creazione tabelle base
-        print("\nCreazione schema base...")
-        execute_sql_file(conn, 'data/database/migrations/create_base_tables_pg.sql')
+        print("\nCreazione schema...")
+        cur = conn.cursor()
         
-        # Esegue script aggiornamento struttura
-        print("\nAggiornamento struttura tabelle...")
-        execute_sql_file(conn, 'data/database/migrations/update_tables_structure.sql')
+        # Crea la funzione update_timestamp
+        print("Creazione funzione update_timestamp...")
+        cur.execute("""
+            CREATE OR REPLACE FUNCTION update_timestamp()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            AS
+            $function$
+            BEGIN
+                NEW.updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC';
+                RETURN NEW;
+            END;
+            $function$;
+        """)
         
-        print("\nSchema PostgreSQL configurato con successo")
+        # Crea le tabelle
+        print("Creazione tabelle...")
+        cur.execute("""
+            CREATE TABLE exchanges (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) UNIQUE NOT NULL,
+                is_active BOOLEAN DEFAULT true,
+                api_config JSONB DEFAULT '{}',
+                rate_limits JSONB DEFAULT '{}',
+                supported_features JSONB DEFAULT '[]',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE symbols (
+                id SERIAL PRIMARY KEY,
+                exchange_id INTEGER NOT NULL REFERENCES exchanges(id) ON DELETE CASCADE,
+                name VARCHAR(50) NOT NULL,
+                base_asset VARCHAR(20) NOT NULL,
+                quote_asset VARCHAR(20) NOT NULL,
+                is_active BOOLEAN DEFAULT true,
+                trading_config JSONB DEFAULT '{}',
+                filters JSONB DEFAULT '{}',
+                limits JSONB DEFAULT '{}',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (exchange_id, name)
+            );
+
+            CREATE TABLE market_data (
+                id SERIAL PRIMARY KEY,
+                exchange_id INTEGER NOT NULL REFERENCES exchanges(id) ON DELETE CASCADE,
+                symbol_id INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+                timeframe VARCHAR(10) NOT NULL,
+                timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+                open DOUBLE PRECISION NOT NULL,
+                high DOUBLE PRECISION NOT NULL,
+                low DOUBLE PRECISION NOT NULL,
+                close DOUBLE PRECISION NOT NULL,
+                volume DOUBLE PRECISION NOT NULL,
+                sma_20 DOUBLE PRECISION,
+                ema_50 DOUBLE PRECISION,
+                rsi_14 DOUBLE PRECISION,
+                macd DOUBLE PRECISION,
+                macd_signal DOUBLE PRECISION,
+                macd_hist DOUBLE PRECISION,
+                bb_upper DOUBLE PRECISION,
+                bb_middle DOUBLE PRECISION,
+                bb_lower DOUBLE PRECISION,
+                volatility DOUBLE PRECISION,
+                trend_strength DOUBLE PRECISION,
+                volume_ma_20 DOUBLE PRECISION,
+                technical_indicators JSONB DEFAULT '{}',
+                pattern_recognition JSONB DEFAULT '{}',
+                market_metrics JSONB DEFAULT '{}',
+                is_valid BOOLEAN DEFAULT true,
+                validation_errors JSONB DEFAULT '[]',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (exchange_id, symbol_id, timeframe, timestamp)
+            );
+
+            CREATE TABLE gene_parameters (
+                id SERIAL PRIMARY KEY,
+                gene_type VARCHAR(50) NOT NULL,
+                parameter_name VARCHAR(50) NOT NULL,
+                value VARCHAR(100) NOT NULL,
+                validation_rules JSONB DEFAULT '{}',
+                optimization_bounds JSONB DEFAULT '{}',
+                dependencies JSONB DEFAULT '[]',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (gene_type, parameter_name)
+            );
+        """)
+        
+        # Crea i trigger
+        print("Creazione trigger...")
+        cur.execute("""
+            CREATE TRIGGER update_exchanges_timestamp
+                BEFORE UPDATE ON exchanges
+                FOR EACH ROW
+                EXECUTE FUNCTION update_timestamp();
+
+            CREATE TRIGGER update_symbols_timestamp
+                BEFORE UPDATE ON symbols
+                FOR EACH ROW
+                EXECUTE FUNCTION update_timestamp();
+
+            CREATE TRIGGER update_market_data_timestamp
+                BEFORE UPDATE ON market_data
+                FOR EACH ROW
+                EXECUTE FUNCTION update_timestamp();
+
+            CREATE TRIGGER update_gene_parameters_timestamp
+                BEFORE UPDATE ON gene_parameters
+                FOR EACH ROW
+                EXECUTE FUNCTION update_timestamp();
+        """)
+        
+        # Crea gli indici
+        print("Creazione indici...")
+        cur.execute("""
+            CREATE INDEX idx_exchange_lookup ON exchanges (name, is_active);
+            CREATE INDEX idx_symbol_lookup ON symbols (exchange_id, name, is_active);
+            CREATE INDEX idx_symbol_assets ON symbols (base_asset, quote_asset);
+            CREATE INDEX idx_market_data_lookup ON market_data (exchange_id, symbol_id, timeframe, timestamp, is_valid);
+            CREATE INDEX idx_market_timestamp ON market_data (timestamp);
+            CREATE INDEX idx_market_validation ON market_data (is_valid);
+            CREATE INDEX idx_gene_lookup ON gene_parameters (gene_type, parameter_name);
+        """)
+        
+        conn.commit()
+        print("Schema PostgreSQL configurato con successo")
         
     except Exception as e:
         print(f"Errore setup schema: {str(e)}")
+        if 'conn' in locals():
+            conn.rollback()
         sys.exit(1)
     finally:
-        conn.close()
-
-def get_column_names(engine, table_name):
-    """Ottiene i nomi delle colonne di una tabella."""
-    inspector = inspect(engine)
-    return [col['name'] for col in inspector.get_columns(table_name)]
-
-def convert_row(row, columns):
-    """Converte i valori di una riga per PostgreSQL."""
-    converted = []
-    for i, value in enumerate(row):
-        col_name = columns[i].lower()
-        # Converti booleani
-        if col_name in ('is_active', 'is_valid') and isinstance(value, int):
-            converted.append(bool(value))
-        else:
-            converted.append(value)
-    return tuple(converted)
-
-def migrate_data():
-    """Migra i dati da SQLite a PostgreSQL."""
-    try:
-        # Configura connessione SQLite
-        sqlite_url = "sqlite:///data/tradingdna.db"
-        sqlite_engine = create_engine(sqlite_url)
-        
-        # Configura connessione PostgreSQL
-        config = load_config()
-        pg_conn = psycopg2.connect(config['url'])
-        pg_cur = pg_conn.cursor()
-        
-        # Lista delle tabelle da migrare nell'ordine corretto
-        tables = [
-            'exchanges',  # Prima le tabelle senza foreign keys
-            'symbols',    # Dipende da exchanges
-            'market_data',  # Dipende da exchanges e symbols
-            'populations',  # Indipendente
-            'chromosomes',  # Dipende da populations
-            'chromosome_genes'  # Dipende da chromosomes
-        ]
-        
-        print("\nInizio migrazione dati...")
-        for table in tables:
-            print(f"\nMigrazione tabella {table}...")
-            
-            try:
-                # Ottieni nomi colonne
-                columns = get_column_names(sqlite_engine, table)
-                
-                # Leggi dati da SQLite
-                with sqlite_engine.connect() as conn:
-                    result = conn.execute(text(f"SELECT * FROM {table}"))
-                    rows = result.fetchall()
-                    
-                total = len(rows)
-                if total == 0:
-                    print(f"Nessun dato da migrare per {table}")
-                    continue
-                    
-                print(f"Trovate {total} righe da migrare")
-                
-                # Migra in batch
-                batch_size = 1000
-                column_names = ', '.join(columns)
-                placeholders = ', '.join(['%s'] * len(columns))
-                
-                # Costruisci la query con ON CONFLICT DO NOTHING
-                id_column = 'id'
-                if table == 'populations':
-                    id_column = 'population_id'
-                elif table == 'chromosomes':
-                    id_column = 'chromosome_id'
-                elif table == 'chromosome_genes':
-                    id_column = 'chromosome_gene_id'
-                    
-                query = f"""
-                    INSERT INTO {table} ({column_names})
-                    VALUES ({placeholders})
-                    ON CONFLICT ({id_column}) DO NOTHING
-                """
-                
-                for i in range(0, total, batch_size):
-                    batch = rows[i:i + batch_size]
-                    # Converti ogni riga
-                    values = [convert_row(row, columns) for row in batch]
-                    
-                    # Inserisci batch in PostgreSQL
-                    pg_cur.executemany(query, values)
-                    pg_conn.commit()
-                    
-                    print(f"Migrati {min(i + batch_size, total)}/{total} record")
-                    
-                print(f"Migrazione {table} completata")
-                
-            except Exception as e:
-                print(f"ERRORE migrazione tabella {table}: {str(e)}")
-                pg_conn.rollback()
-                continue
-            
-        print("\nMigrazione completata con successo!")
-        
-    except Exception as e:
-        print(f"Errore migrazione dati: {str(e)}")
-        if 'pg_conn' in locals():
-            pg_conn.rollback()
-        sys.exit(1)
-    finally:
-        if 'pg_cur' in locals():
-            pg_cur.close()
-        if 'pg_conn' in locals():
-            pg_conn.close()
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
 
 def main():
     """Funzione principale per la migrazione."""
-    start_time = time.time()
-    
     print("=== INIZIO MIGRAZIONE A POSTGRESQL ===\n")
     
     # Step 1: Crea database
@@ -257,12 +258,7 @@ def main():
     print("\nStep 2: Setup schema PostgreSQL")
     setup_postgres_schema()
     
-    # Step 3: Migrazione dati
-    print("\nStep 3: Migrazione dati")
-    migrate_data()
-    
-    elapsed = time.time() - start_time
-    print(f"\n=== MIGRAZIONE COMPLETATA IN {elapsed:.2f}s ===")
+    print("\n=== MIGRAZIONE COMPLETATA ===")
 
 if __name__ == '__main__':
     main()

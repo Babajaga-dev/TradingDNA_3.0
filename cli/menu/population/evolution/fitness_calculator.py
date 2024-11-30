@@ -40,19 +40,19 @@ def retry_on_db_lock(func):
         
         for attempt in range(MAX_RETRIES):
             try:
-                print(f"[DEBUG] Tentativo {attempt+1}/{MAX_RETRIES} di esecuzione {func.__name__}")
+                #print(f"[DEBUG] Tentativo {attempt+1}/{MAX_RETRIES} di esecuzione {func.__name__}")
                 return func(*args, **kwargs)
             except OperationalError as e:
                 if "database is locked" in str(e):
                     last_error = e
                     if attempt < MAX_RETRIES - 1:
-                        print(f"[DEBUG] Database LOCKED in {func.__name__}! Retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                        #print(f"[DEBUG] Database LOCKED in {func.__name__}! Retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
                         logger.warning(f"Database locked, retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
                         time.sleep(delay)
                         delay = min(delay * 2 + random.random(), MAX_RETRY_DELAY)
                         continue
                 raise
-        print(f"[DEBUG] MAX RETRY RAGGIUNTI per {func.__name__}! Ultimo errore: {str(last_error)}")
+        #print(f"[DEBUG] MAX RETRY RAGGIUNTI per {func.__name__}! Ultimo errore: {str(last_error)}")
         logger.error(f"Max retries ({MAX_RETRIES}) raggiunti per database lock")
         raise last_error
     return wrapper
@@ -88,7 +88,7 @@ class FitnessCalculator(PopulationBaseManager):
             print("[DEBUG] File config/test.yaml caricato")
             return config['evolution_test']
         except Exception as e:
-            print(f"[DEBUG] ERRORE caricamento config fitness: {str(e)}")
+            #print(f"[DEBUG] ERRORE caricamento config fitness: {str(e)}")
             logger.error(f"Errore caricamento configurazione test: {str(e)}")
             raise
 
@@ -170,7 +170,7 @@ class FitnessCalculator(PopulationBaseManager):
             print("[DEBUG] === FINE RESET DATI TEST POPOLAZIONE ===\n")
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE reset dati test: {str(e)}")
+            #print(f"[DEBUG] ERRORE reset dati test: {str(e)}")
             logger.error(f"Errore reset dati test: {str(e)}")
             session.rollback()
             raise
@@ -191,7 +191,7 @@ class FitnessCalculator(PopulationBaseManager):
                     return self._calculate_population_fitness_internal(population, new_session)
                     
         except Exception as e:
-            print(f"[DEBUG] ERRORE CRITICO calcolo fitness popolazione: {str(e)}")
+            #print(f"[DEBUG] ERRORE CRITICO calcolo fitness popolazione: {str(e)}")
             logger.error(f"Errore calcolo fitness popolazione: {str(e)}")
             raise
             
@@ -219,7 +219,7 @@ class FitnessCalculator(PopulationBaseManager):
             "worst_fitness": float('inf'),
             "distribution": []
         }
-        print(f"[DEBUG] Statistiche inizializzate: {stats['total']} cromosomi totali")
+        #print(f"[DEBUG] Statistiche inizializzate: {stats['total']} cromosomi totali")
         
         # Carica dati di mercato
         print("[DEBUG] Inizio caricamento dati di mercato...")
@@ -231,14 +231,14 @@ class FitnessCalculator(PopulationBaseManager):
                 self.test_config['backtest']['days']
             )
         load_time = time.time() - start_time
-        print(f"[DEBUG] Dati di mercato pronti in {load_time:.2f}s")
+        #print(f"[DEBUG] Dati di mercato pronti in {load_time:.2f}s")
         
         # Processa i cromosomi in batch
         chromosomes = [c for c in population.chromosomes if c and c.status == 'active']
         total_chromosomes = len(chromosomes)
         processed = 0
         
-        print(f"[DEBUG] Inizio processing {total_chromosomes} cromosomi attivi in batch di {BATCH_SIZE}")
+        #print(f"[DEBUG] Inizio processing {total_chromosomes} cromosomi attivi in batch di {BATCH_SIZE}")
         
         for i in range(0, total_chromosomes, BATCH_SIZE):
             batch = chromosomes[i:i + BATCH_SIZE]
@@ -261,10 +261,10 @@ class FitnessCalculator(PopulationBaseManager):
                         stats["best_fitness"] = max(stats["best_fitness"], fitness)
                         stats["worst_fitness"] = min(stats["worst_fitness"], fitness)
                         stats["distribution"].append(fitness)
-                        print(f"[DEBUG] Fitness calcolato: {fitness}")
+                        #print(f"[DEBUG] Fitness calcolato: {fitness}")
                         
                 except Exception as e:
-                    print(f"[DEBUG] ERRORE calcolo fitness cromosoma: {str(e)}")
+                    #print(f"[DEBUG] ERRORE calcolo fitness cromosoma: {str(e)}")
                     logger.error(f"Errore calcolo fitness cromosoma: {str(e)}")
                     continue
             
@@ -277,10 +277,10 @@ class FitnessCalculator(PopulationBaseManager):
             stats["avg_fitness"] = sum(stats["distribution"]) / len(stats["distribution"])
             
         print(f"\n[DEBUG] === FINE CALCOLO FITNESS POPOLAZIONE ===")
-        print(f"[DEBUG] Statistiche finali:")
-        print(f"[DEBUG] - Cromosomi valutati: {stats['evaluated']}/{stats['total']}")
-        print(f"[DEBUG] - Miglior fitness: {stats['best_fitness']:.2f}")
-        print(f"[DEBUG] - Fitness medio: {stats['avg_fitness']:.2f}")
+        #print(f"[DEBUG] Statistiche finali:")
+        #print(f"[DEBUG] - Cromosomi valutati: {stats['evaluated']}/{stats['total']}")
+        #print(f"[DEBUG] - Miglior fitness: {stats['best_fitness']:.2f}")
+        #print(f"[DEBUG] - Fitness medio: {stats['avg_fitness']:.2f}")
         
         return stats
             
@@ -292,7 +292,7 @@ class FitnessCalculator(PopulationBaseManager):
     ) -> float:
         """Calcola il fitness di un cromosoma senza operazioni di merge."""
         try:
-            print(f"[DEBUG] Calcolo fitness per cromosoma {chromosome.chromosome_id}")
+            #print(f"[DEBUG] Calcolo fitness per cromosoma {chromosome.chromosome_id}")
             
             # Calcola segnali
             print("[DEBUG] Calcolo segnali trading...")
@@ -317,5 +317,5 @@ class FitnessCalculator(PopulationBaseManager):
             return fitness
                 
         except Exception as e:
-            print(f"[DEBUG] ERRORE calcolo fitness cromosoma {getattr(chromosome, 'chromosome_id', None)}: {str(e)}")
+            #print(f"[DEBUG] ERRORE calcolo fitness cromosoma {getattr(chromosome, 'chromosome_id', None)}: {str(e)}")
             return 0.0

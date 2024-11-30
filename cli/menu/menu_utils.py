@@ -224,69 +224,25 @@ def reset_system():
             log_dir.mkdir(exist_ok=True)
             print("Directory log ricreata.")
         
-        # 4. Reset del database PostgreSQL
-        print("Reset del database PostgreSQL...")
-        
-        # Carica la configurazione del database da security.yaml
-        try:
-            with open('config/security.yaml', 'r') as f:
-                security_config = yaml.safe_load(f)
-                db_config = security_config.get('database', {})
-                if not db_config:
-                    raise ValueError("Configurazione database non trovata in security.yaml")
-        except Exception as e:
-            print(f"Errore caricamento configurazione database: {e}")
-            raise
-        
-        # Forza la chiusura delle connessioni
+        # 4. Forza la chiusura delle connessioni
+        print("Chiusura connessioni al database...")
         force_close_connections()
         
-        # Attendi un momento per permettere la chiusura delle connessioni
+        # 5. Attendi un momento per permettere la chiusura delle connessioni
         time.sleep(2)
         
-        try:
-            # Connessione al database postgres per eliminare e ricreare il database
-            db_url = db_config['url']
-            parsed = urlparse(db_url)
-            db_name = parsed.path[1:]  # Rimuove lo slash iniziale
-            
-            # Costruisce URL per database postgres
-            postgres_url = f"{parsed.scheme}://{parsed.username}:{parsed.password}@{parsed.hostname}:{parsed.port}/postgres"
-            
-            # Crea una connessione separata al database postgres con autocommit=True
-            conn = psycopg2.connect(postgres_url)
-            conn.autocommit = True
-            
-            try:
-                with conn.cursor() as cur:
-                    # Termina tutte le connessioni al database
-                    cur.execute(f"""
-                        SELECT pg_terminate_backend(pg_stat_activity.pid)
-                        FROM pg_stat_activity
-                        WHERE pg_stat_activity.datname = %s
-                        AND pid <> pg_backend_pid()
-                    """, (db_name,))
-                    
-                    # Elimina il database se esiste
-                    cur.execute(f"DROP DATABASE IF EXISTS {db_name}")
-                    
-                    # Ricrea il database
-                    cur.execute(f"CREATE DATABASE {db_name}")
-                
-                print(f"Database {db_name} ricreato con successo")
-                
-            finally:
-                conn.close()
-            
-        except Exception as e:
-            print(f"Errore durante il reset del database: {e}")
-            raise
+        # 6. Reset del database usando il nuovo metodo
+        print("Reset del database in corso...")
+        from data.database.models.models import reset_database, verify_database_state
+        reset_database()  # Questo metodo ora include la verifica
         
-        # 5. Inizializza il database con le nuove tabelle
-        print("Inizializzazione nuovo database...")
-        initialize_database()
+        # 7. Verifica lo stato del database
+        print("Verifica stato del database...")
+        if not verify_database_state():
+            raise Exception("Verifica stato database fallita dopo il reset")
         
-        # 6. Inserisci Binance con il nome corretto
+        # 8. Inserisci Binance con il nome corretto
+        print("Configurazione exchange Binance...")
         with db.session() as session:
             # Verifica se Binance esiste già
             result = session.execute(
@@ -312,17 +268,20 @@ def reset_system():
                     """)
                 )
             
-        print("Database inizializzato con exchange 'binance'")
+        print("Exchange Binance configurato")
         
-        # 7. Inizializza i parametri dei geni dai valori di default
+        # 9. Inizializza i parametri dei geni dai valori di default
         print("Inizializzazione parametri dei geni...")
-        # Carica la configurazione di sistema da logging.yaml
-        with open("config/logging.yaml", 'r') as f:
-            system_config = yaml.safe_load(f).get('system', {})
-        initialize_gene_parameters(system_config)
-        print("Parametri dei geni inizializzati dai valori di default")
+        try:
+            with open("config/gene.yaml", 'r') as f:
+                gene_config = yaml.safe_load(f)
+                initialize_gene_parameters(gene_config)
+            print("Parametri dei geni inizializzati dai valori di default")
+        except Exception as e:
+            print(f"Avviso: Errore durante l'inizializzazione dei parametri dei geni: {e}")
+            print("Il sistema continuerà con i parametri di default")
         
-        # 8. Reset dei geni
+        # 10. Reset dei geni
         print("Reset dei geni in corso...")
         gene_manager = GeneManager()
         # Lista aggiornata dei tipi di geni disponibili
@@ -332,27 +291,31 @@ def reset_system():
                 gene_manager.reset_gene_params(gene_type)
                 print(f"Gene {gene_type} resettato con successo")
             except Exception as e:
-                print(f"Errore durante il reset del gene {gene_type}: {e}")
+                print(f"Avviso: Errore durante il reset del gene {gene_type}: {e}")
         
-        # 9. Riconfigura il logging
+        # 11. Riconfigura il logging
         print("Riconfigurazione sistema di logging...")
         from cli.logger import setup_logging
         setup_logging("config/logging.yaml")
         
+        # 12. Verifica finale
+        print("Verifica finale del sistema...")
+        if not verify_database_state():
+            raise Exception("Verifica finale del sistema fallita")
+        
         return "Reset del sistema completato con successo."
         
     except Exception as e:
-        print(f"\nErrore durante il reset del sistema: {str(e)}")
-        return "Errore durante il reset del sistema."
+        error_msg = f"\nErrore durante il reset del sistema: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
 
 def force_close_connections():
     """Forza la chiusura di tutte le connessioni al database."""
     try:
-        # Chiudi gli engine del DBSessionManager
+        # Chiudi l'engine del DBSessionManager
         if hasattr(db.engine, 'dispose'):
             db.engine.dispose()
-        if hasattr(db.async_engine, 'dispose'):
-            asyncio.get_event_loop().run_until_complete(db.async_engine.dispose())
         
         # Forza il garbage collector
         import gc
@@ -514,4 +477,3 @@ def genetic_optimization_placeholder(*args, **kwargs):
     print("\n[In Sviluppo] Ottimizzazione genetica dei parametri")
     input("\nPremi INVIO per continuare...")
     return None
-

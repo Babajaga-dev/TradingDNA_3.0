@@ -19,6 +19,9 @@ evolution_test:
   generation_interval: 1
   diversity_threshold: 0.7
   
+  # Timeout test in secondi
+  timeout: 1800  # 30 minuti
+  
   # Metriche test
   metrics_weights:
     total_return: 0.3

@@ -45,14 +45,14 @@ class EvolutionSystemTester:
             print("[DEBUG] Configurazione test caricata")
             return config['evolution_test']
         except Exception as e:
-            print(f"[DEBUG] ERRORE caricamento config: {str(e)}")
+            #print(f"[DEBUG] ERRORE caricamento config: {str(e)}")
             logger.error(f"Errore caricamento configurazione test: {str(e)}")
             raise
             
     def run_all_tests(self) -> str:
         """Esegue tutti i test del sistema."""
         start_time = time.time()
-        timeout = 300  # 5 minuti timeout
+        timeout = self.test_config['timeout']  # Legge il timeout dalla configurazione
         
         try:
             print("\n[DEBUG] === INIZIO TEST SISTEMA EVOLUZIONE ===")
@@ -90,12 +90,12 @@ class EvolutionSystemTester:
                     # Crea una nuova sessione per ogni test
                     with self.db.session() as session:
                         # Esegui test con la sessione corrente
-                        print(f"[DEBUG] Esecuzione {test.__name__}")
+                        #print(f"[DEBUG] Esecuzione {test.__name__}")
                         result = test(session)
                         
                         print("[DEBUG] Commit della sessione")
                         session.commit()
-                        print(f"[DEBUG] Test {test.__name__} completato con successo")
+                        #print(f"[DEBUG] Test {test.__name__} completato con successo")
                         
                         results.append({
                             'name': test.__name__,
@@ -104,7 +104,7 @@ class EvolutionSystemTester:
                         })
                             
                 except Exception as e:
-                    print(f"[DEBUG] ERRORE in {test.__name__}: {str(e)}")
+                    #print(f"[DEBUG] ERRORE in {test.__name__}: {str(e)}")
                     logger.error(f"Test {test.__name__} fallito: {str(e)}")
                     results.append({
                         'name': test.__name__,
@@ -112,7 +112,7 @@ class EvolutionSystemTester:
                         'error': str(e)
                     })
                 finally:
-                    print(f"[DEBUG] === FINE TEST: {test.__name__} ===\n")
+                    #print(f"[DEBUG] === FINE TEST: {test.__name__} ===\n")
                     time.sleep(0.5)  # Piccolo ritardo tra i test
             
             print("[DEBUG] Generazione report")
@@ -130,12 +130,12 @@ class EvolutionSystemTester:
             
         except TimeoutError as e:
             error_msg = f"Timeout durante l'esecuzione dei test: {str(e)}"
-            print(f"[DEBUG] {error_msg}")
+            #print(f"[DEBUG] {error_msg}")
             logger.error(error_msg)
             return error_msg
         except Exception as e:
             error_msg = f"Errore esecuzione test: {str(e)}"
-            print(f"[DEBUG] {error_msg}")
+            #print(f"[DEBUG] {error_msg}")
             logger.error(error_msg)
             return error_msg
             
@@ -146,7 +146,7 @@ class EvolutionSystemTester:
         result = db_init.initialize()
         
         if "errore" in result.lower():
-            print(f"[DEBUG] ERRORE inizializzazione DB: {result}")
+            #print(f"[DEBUG] ERRORE inizializzazione DB: {result}")
             raise ValueError(result)
             
         print("[DEBUG] Inizializzazione database completata")
@@ -165,7 +165,7 @@ class EvolutionSystemTester:
             print("[DEBUG] ERRORE: Creazione popolazione fallita")
             raise ValueError("Failed to create population")
             
-        print(f"[DEBUG] Popolazione creata: {population.name}")
+        #print(f"[DEBUG] Popolazione creata: {population.name}")
         return {
             'description': 'Test population creation',
             'population_id': population.population_id,
@@ -183,7 +183,7 @@ class EvolutionSystemTester:
             print("[DEBUG] ERRORE: Creazione popolazione fallita")
             raise ValueError("Failed to create population")
             
-        print(f"[DEBUG] Avvio test evoluzione per {population.name}")
+        #print(f"[DEBUG] Avvio test evoluzione per {population.name}")
         tester = EvolutionTester()
         result = tester.run_test(population.population_id, 5, session)
         print("[DEBUG] Test evoluzione breve completato")
@@ -203,7 +203,7 @@ class EvolutionSystemTester:
             print("[DEBUG] ERRORE: Creazione popolazione fallita")
             raise ValueError("Failed to create population")
             
-        print(f"[DEBUG] Avvio test evoluzione per {population.name}")
+        #print(f"[DEBUG] Avvio test evoluzione per {population.name}")
         tester = EvolutionTester()
         result = tester.run_test(population.population_id, 20, session)
         print("[DEBUG] Test evoluzione lunga completato")
@@ -221,20 +221,20 @@ class EvolutionSystemTester:
         tester = EvolutionTester()
         
         for i in range(3):
-            print(f"[DEBUG] Creazione popolazione stress {i+1}/3")
+            #print(f"[DEBUG] Creazione popolazione stress {i+1}/3")
             population = pop_creator.create_test_population(f"stress_pop_{i}", session)
             
             if not population or not population.population_id:
                 print("[DEBUG] ERRORE: Creazione popolazione fallita")
                 raise ValueError("Failed to create population")
                 
-            print(f"[DEBUG] Avvio test evoluzione per {population.name}")
+            #print(f"[DEBUG] Avvio test evoluzione per {population.name}")
             result = tester.run_test(population.population_id, 10, session)
             results.append({
                 'population_id': population.population_id,
                 'result': result
             })
-            print(f"[DEBUG] Test stress {i+1}/3 completato")
+            #print(f"[DEBUG] Test stress {i+1}/3 completato")
         
         print("[DEBUG] Test stress completato")
         return {
@@ -291,11 +291,11 @@ class EvolutionSystemTester:
             with open(report_dir / filename, 'w') as f:
                 f.write(report)
                 
-            print(f"[DEBUG] Report salvato in {filename}")
+            #print(f"[DEBUG] Report salvato in {filename}")
             logger.info(f"Report salvato in {filename}")
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE salvataggio report: {str(e)}")
+            #print(f"[DEBUG] ERRORE salvataggio report: {str(e)}")
             logger.error(f"Errore salvataggio report: {str(e)}")
 
 def main():
@@ -306,7 +306,7 @@ def main():
         report = tester.run_all_tests()
         print(report)
     except Exception as e:
-        print(f"[DEBUG] ERRORE esecuzione test: {str(e)}")
+        #print(f"[DEBUG] ERRORE esecuzione test: {str(e)}")
         logger.error(f"Errore esecuzione test: {str(e)}")
         print(f"Errore esecuzione test: {str(e)}")
 

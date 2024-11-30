@@ -38,8 +38,8 @@ class PopulationMenuManager:
         
     def _list_populations(self) -> str:
         """Callback per lista popolazioni."""
-        populations = self.monitor.list_populations()
-        return self.monitor.format_table(populations)
+        # Usa direttamente il risultato di list_populations che già include la tabella formattata
+        return self.monitor.list_populations()
         
     def _view_population_status(self) -> str:
         """Callback per visualizzazione stato popolazione."""

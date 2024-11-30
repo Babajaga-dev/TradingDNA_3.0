@@ -33,18 +33,18 @@ def retry_on_db_lock(func):
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
-                print(f"[DEBUG] Tentativo {attempt+1}/{MAX_RETRIES} di esecuzione {func.__name__}")
+                #print(f"[DEBUG] Tentativo {attempt+1}/{MAX_RETRIES} di esecuzione {func.__name__}")
                 return func(*args, **kwargs)
             except OperationalError as e:
                 if "database is locked" in str(e):
                     last_error = e
                     delay = min(RETRY_DELAY * (2 ** attempt) + random.random(), MAX_BACKOFF)
-                    print(f"[DEBUG] Database LOCKED in {func.__name__}! Retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
+                    #print(f"[DEBUG] Database LOCKED in {func.__name__}! Retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
                     logger.warning(f"Database locked, retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
                     time.sleep(delay)
                     continue
                 raise
-        print(f"[DEBUG] MAX RETRY RAGGIUNTI per {func.__name__}! Ultimo errore: {str(last_error)}")
+        #print(f"[DEBUG] MAX RETRY RAGGIUNTI per {func.__name__}! Ultimo errore: {str(last_error)}")
         logger.error(f"Max retries ({MAX_RETRIES}) raggiunti per database lock")
         raise last_error
     return wrapper
@@ -79,7 +79,7 @@ class MarketDataManager(PopulationBaseManager):
                 
             # Ottieni ultimi N giorni di dati
             days = self.test_config['backtest']['days']
-            print(f"[DEBUG] Caricamento {days} giorni di dati")
+            #print(f"[DEBUG] Caricamento {days} giorni di dati")
             
             if session is None:
                 print("[DEBUG] Creazione nuova sessione per market data")
@@ -90,19 +90,19 @@ class MarketDataManager(PopulationBaseManager):
                 return self._get_market_data_internal(population, days, session)
             
         except Exception as e:
-            print(f"[DEBUG] ERRORE caricamento dati mercato: {str(e)}")
+            #print(f"[DEBUG] ERRORE caricamento dati mercato: {str(e)}")
             logger.error(f"Errore caricamento dati mercato: {str(e)}")
             return []
 
     def _get_market_data_internal(self, population: Population, days: int, session: Session) -> List[MarketData]:
         """Implementazione interna per ottenere i dati di mercato."""
-        print(f"[DEBUG] Query dati mercato: symbol={population.symbol_id}, timeframe={population.timeframe}")
+        #print(f"[DEBUG] Query dati mercato: symbol={population.symbol_id}, timeframe={population.timeframe}")
         start_time = time.time()
         
         # Calcola il numero corretto di candele in base al timeframe
         candles_per_day = self._get_candles_per_day(population.timeframe)
         total_candles = days * candles_per_day
-        print(f"[DEBUG] Richieste {total_candles} candele ({candles_per_day} candele/giorno)")
+        #print(f"[DEBUG] Richieste {total_candles} candele ({candles_per_day} candele/giorno)")
         
         data = session.query(MarketData)\
             .filter(
@@ -114,17 +114,17 @@ class MarketDataManager(PopulationBaseManager):
             .all()
             
         query_time = time.time() - start_time
-        print(f"[DEBUG] Query completata in {query_time:.2f}s")
+        #print(f"[DEBUG] Query completata in {query_time:.2f}s")
             
         # Verifica timeout manuale
         if query_time > QUERY_TIMEOUT:
-            print(f"[DEBUG] TIMEOUT query dati mercato ({query_time:.2f}s > {QUERY_TIMEOUT}s)")
+            #print(f"[DEBUG] TIMEOUT query dati mercato ({query_time:.2f}s > {QUERY_TIMEOUT}s)")
             logger.error("Timeout query dati mercato")
             return []
         
         # Aggiorna cache solo se ci sono dati
         if data:
-            print(f"[DEBUG] Aggiornamento cache con {len(data)} record")
+            #print(f"[DEBUG] Aggiornamento cache con {len(data)} record")
             cache_key = f"{population.symbol_id}_{population.timeframe}"
             self._market_data_cache[cache_key] = data
             self._cache_timestamp = datetime.now()
@@ -135,7 +135,7 @@ class MarketDataManager(PopulationBaseManager):
             
     def create_test_market_data(self, days: int) -> List[Dict]:
         """Crea dati di mercato di test."""
-        print(f"[DEBUG] Creazione {days} giorni di dati di test")
+        #print(f"[DEBUG] Creazione {days} giorni di dati di test")
         data = []
         base_price = 100.0
         timestamp = datetime.now()
@@ -151,7 +151,7 @@ class MarketDataManager(PopulationBaseManager):
                 'volume': np.random.randint(1000, 10000)
             })
             
-        print(f"[DEBUG] Creati {len(data)} record di test")
+        #print(f"[DEBUG] Creati {len(data)} record di test")
         return data
 
     def _get_candles_per_day(self, timeframe: str) -> int:
