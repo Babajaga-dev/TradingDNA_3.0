@@ -40,7 +40,6 @@ class TestPopulationCreator(PopulationBaseManager):
             print("[DEBUG] Configurazione test caricata con successo")
             return config['evolution_test']
         except Exception as e:
-            #print(f"[DEBUG] ERRORE caricamento configurazione: {str(e)}")
             logger.error(f"Errore caricamento configurazione test: {str(e)}")
             raise
             
@@ -55,7 +54,6 @@ class TestPopulationCreator(PopulationBaseManager):
                 return self._create_test_population_internal(name, session)
                 
         except Exception as e:
-            #print(f"[DEBUG] ERRORE creazione popolazione: {str(e)}")
             logger.error(f"Errore creazione popolazione test: {str(e)}")
             raise
 
@@ -66,8 +64,6 @@ class TestPopulationCreator(PopulationBaseManager):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 name = f"test_population_{timestamp}"
                 
-            #print(f"[DEBUG] Creazione popolazione '{name}'")
-            
             # Ottieni symbol usando una query nativa PostgreSQL
             symbol_result = session.execute(text("""
                 SELECT id FROM symbols 
@@ -82,7 +78,6 @@ class TestPopulationCreator(PopulationBaseManager):
                 raise ValueError("Symbol BTCUSDT non trovato")
             
             symbol_id = symbol_data[0]
-            #print(f"[DEBUG] Symbol trovato con ID {symbol_id}")
             
             # Crea popolazione usando INSERT ... RETURNING
             population_result = session.execute(text("""
@@ -116,7 +111,6 @@ class TestPopulationCreator(PopulationBaseManager):
                 raise ValueError("Errore creazione popolazione")
                 
             population_id = population_data[0]
-            #print(f"[DEBUG] Popolazione creata con ID {population_id}")
             
             # Crea cromosomi in batch
             self._create_chromosomes_batch(population_id, session)
@@ -126,11 +120,9 @@ class TestPopulationCreator(PopulationBaseManager):
                 select(Population).where(Population.population_id == population_id)
             ).scalar_one()
             
-            #print(f"[DEBUG] Popolazione '{name}' creata con successo")
             return population
             
         except Exception as e:
-            #print(f"[DEBUG] ERRORE in create_test_population_internal: {str(e)}")
             logger.error(f"Errore in create_test_population_internal: {str(e)}")
             session.rollback()
             raise
@@ -138,8 +130,6 @@ class TestPopulationCreator(PopulationBaseManager):
     def _create_chromosomes_batch(self, population_id: int, session: Session) -> None:
         """Crea cromosomi in batch usando PostgreSQL."""
         try:
-            #print(f"[DEBUG] Creazione batch cromosomi per popolazione {population_id}")
-            
             # Crea cromosomi
             chromosomes_values = []
             for i in range(self.test_config['population_size']['default']):
@@ -162,7 +152,6 @@ class TestPopulationCreator(PopulationBaseManager):
             
             result = session.execute(chromosomes_sql)
             chromosome_ids = [row[0] for row in result]
-            #print(f"[DEBUG] Creati {len(chromosome_ids)} cromosomi")
             
             # Carica configurazione geni
             with open('config/gene.yaml', 'r') as f:
@@ -170,12 +159,22 @@ class TestPopulationCreator(PopulationBaseManager):
             
             # Prepara i dati dei geni
             genes_values = []
+            base_risk_factor = gene_config['base']['risk_factor']
+            
             for chromosome_id in chromosome_ids:
                 for gene_type, config in gene_config.items():
                     if gene_type != 'base':
+                        # Ottieni il risk_factor specifico del gene o usa quello base
+                        risk_factor = config['default'].get('risk_factor', base_risk_factor)
+                        # Rimuovi risk_factor dai parametri poiché è una colonna separata
+                        params = config['default'].copy()
+                        if 'risk_factor' in params:
+                            del params['risk_factor']
+                            
                         genes_values.append(
                             f"({chromosome_id}, '{gene_type}', "
-                            f"'{json.dumps(config['default'])}', 0.5, true, "
+                            f"'{json.dumps(params)}', 0.5, true, "
+                            f"{risk_factor}, "  # Aggiunto risk_factor
                             f"'{json.dumps({})}', '{json.dumps(config['constraints'])}')"
                         )
             
@@ -184,17 +183,15 @@ class TestPopulationCreator(PopulationBaseManager):
                 genes_sql = text(f"""
                     INSERT INTO chromosome_genes (
                         chromosome_id, gene_type, parameters, weight,
-                        is_active, mutation_history, validation_rules
+                        is_active, risk_factor, mutation_history, validation_rules
                     )
                     VALUES {','.join(genes_values)};
                 """)
                 session.execute(genes_sql)
             
-            #print(f"[DEBUG] Creati {len(genes_values)} geni")
             session.flush()
             
         except Exception as e:
-            #print(f"[DEBUG] ERRORE creazione batch: {str(e)}")
             logger.error(f"Errore creazione batch: {str(e)}")
             session.rollback()
             raise

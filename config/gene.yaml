@@ -3,6 +3,7 @@ gene:
     mutation_rate: 0.1
     crossover_rate: 0.7
     weight: 1.0
+    risk_factor: 0.5
     test_period_days: 30
   
   rsi:
@@ -11,6 +12,7 @@ gene:
       overbought: 70
       oversold: 30
       weight: 1.0
+      risk_factor: 0.5
     constraints:
       period:
         min: 2
@@ -24,6 +26,9 @@ gene:
       weight:
         min: 0.1
         max: 5.0
+      risk_factor:
+        min: 0.1
+        max: 1.0
   
   moving_average:
     default:
@@ -31,6 +36,7 @@ gene:
       type: "SMA"
       distance: 0.02
       weight: 1.0
+      risk_factor: 0.4
     constraints:
       period:
         min: 5
@@ -43,6 +49,9 @@ gene:
       weight:
         min: 0.1
         max: 5.0
+      risk_factor:
+        min: 0.1
+        max: 1.0
   
   macd:
     default:
@@ -50,6 +59,7 @@ gene:
       slow_period: 26
       signal_period: 9
       weight: 1.0
+      risk_factor: 0.6
     constraints:
       fast_period:
         min: 2
@@ -63,12 +73,16 @@ gene:
       weight:
         min: 0.1
         max: 5.0
+      risk_factor:
+        min: 0.1
+        max: 1.0
   
   bollinger:
     default:
       period: 20
       std_dev: 2
       weight: 1.0
+      risk_factor: 0.7
     constraints:
       period:
         min: 5
@@ -79,6 +93,9 @@ gene:
       weight:
         min: 0.1
         max: 5.0
+      risk_factor:
+        min: 0.1
+        max: 1.0
   
   stochastic:
     default:
@@ -88,6 +105,7 @@ gene:
       overbought: 80
       oversold: 20
       weight: 1.0
+      risk_factor: 0.5
     constraints:
       k_period:
         min: 5
@@ -107,12 +125,16 @@ gene:
       weight:
         min: 0.1
         max: 5.0
+      risk_factor:
+        min: 0.1
+        max: 1.0
   
   atr:
     default:
       period: 14
       multiplier: 2.0
       weight: 1.0
+      risk_factor: 0.8
     constraints:
       period:
         min: 5
@@ -123,3 +145,6 @@ gene:
       weight:
         min: 0.1
         max: 5.0
+      risk_factor:
+        min: 0.1
+        max: 1.0

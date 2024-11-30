@@ -9,6 +9,7 @@ from datetime import datetime
 import hashlib
 import json
 import random
+import yaml
 
 from data.database.models.population_models import Population, Chromosome, ChromosomeGene
 from .population_base import PopulationBaseManager
@@ -195,6 +196,10 @@ class PopulationCreator(PopulationBaseManager):
             chromosome: Cromosoma a cui aggiungere i geni
         """
         try:
+            # Carica configurazione geni
+            with open('config/gene.yaml', 'r') as f:
+                gene_config = yaml.safe_load(f)['gene']
+            
             # Lista dei geni disponibili
             gene_classes = {
                 'rsi': RSIGene,
@@ -214,13 +219,18 @@ class PopulationCreator(PopulationBaseManager):
                     # Crea istanza del gene con parametri di default
                     gene = gene_class()
                     
+                    # Ottieni configurazione specifica del gene
+                    gene_specific_config = gene_config.get(gene_name, {})
+                    default_config = gene_specific_config.get('default', {})
+                    
                     # Crea ChromosomeGene e aggiungilo alla lista dei geni del cromosoma
                     chromosome_gene = ChromosomeGene(
                         gene_type=gene_name,
                         parameters=json.dumps(gene.params),
                         weight=gene.weight,
                         is_active=True,
-                        validation_rules=json.dumps(gene.constraints)
+                        validation_rules=json.dumps(gene.constraints),
+                        risk_factor=default_config.get('risk_factor', gene_config['base']['risk_factor'])
                     )
                     
                     # Usa la relazione invece dell'ID

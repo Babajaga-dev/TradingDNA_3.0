@@ -4,7 +4,7 @@ Mutation Manager
 Gestione delle mutazioni genetiche.
 """
 
-from typing import List, Dict
+from typing import List, Dict, Union
 import random
 import json
 from datetime import datetime
@@ -44,6 +44,33 @@ def retry_on_db_lock(func):
         logger.error(f"Max retries ({MAX_RETRIES}) raggiunti per database lock")
         raise last_error
     return wrapper
+
+def ensure_json_dict(value: Union[str, Dict, None]) -> Dict:
+    """Converte una stringa JSON o un dizionario in un dizionario."""
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+def ensure_json_string(value: Union[str, Dict, None]) -> str:
+    """Converte un dizionario o una stringa JSON in una stringa JSON."""
+    if value is None:
+        return '{}'
+    if isinstance(value, str):
+        try:
+            # Verifica che sia un JSON valido
+            json.loads(value)
+            return value
+        except json.JSONDecodeError:
+            return '{}'
+    try:
+        return json.dumps(value)
+    except TypeError:
+        return '{}'
 
 class MutationManager(PopulationBaseManager):
     """Gestisce le mutazioni dei cromosomi."""
@@ -93,7 +120,7 @@ class MutationManager(PopulationBaseManager):
                         )
                         mutation_stats["parameter_mutations"] += sum(
                             1 for g in chromosome.genes 
-                            if g.mutation_history and json.loads(g.mutation_history)
+                            if ensure_json_dict(g.mutation_history)
                         )
                 
                 # Commit intermedio dopo ogni batch
@@ -199,7 +226,7 @@ class MutationManager(PopulationBaseManager):
                 gene.weight = max(0.1, min(5.0, new_weight))
                 
                 # Aggiorna storia mutazioni
-                history = json.loads(gene.mutation_history or '{}')
+                history = ensure_json_dict(gene.mutation_history)
                 history[datetime.now().isoformat()] = {
                     'type': 'weight',
                     'delta': delta
@@ -215,10 +242,8 @@ class MutationManager(PopulationBaseManager):
         """
         for gene in chromosome.genes:
             if random.random() < 0.2:  # 20% chance per gene
-                params = json.loads(gene.parameters)
-                
-                # Ottieni regole validazione
-                rules = json.loads(gene.validation_rules or '{}')
+                params = ensure_json_dict(gene.parameters)
+                rules = ensure_json_dict(gene.validation_rules)
                 
                 # Muta parametri rispettando regole
                 for param, value in params.items():
@@ -237,7 +262,7 @@ class MutationManager(PopulationBaseManager):
                 gene.parameters = json.dumps(params)
                 
                 # Aggiorna storia mutazioni
-                history = json.loads(gene.mutation_history or '{}')
+                history = ensure_json_dict(gene.mutation_history)
                 history[datetime.now().isoformat()] = {
                     'type': 'parameters',
                     'params': params

@@ -30,6 +30,7 @@ class Gene(ABC):
         self.mutation_rate = base_config.get('mutation_rate', 0.1)
         self.crossover_rate = base_config.get('crossover_rate', 0.7)
         self.weight = base_config.get('weight', 1.0)
+        self.risk_factor = base_config.get('risk_factor', 0.5)
         self.test_period_days = base_config.get('test_period_days', 30)
         
         # Carica parametri specifici del gene
@@ -38,10 +39,21 @@ class Gene(ABC):
         if params:
             self.params.update(params)
             
+        # Aggiorna risk_factor se specificato nella configurazione specifica del gene
+        if 'risk_factor' in gene_config:
+            self.risk_factor = gene_config['risk_factor']
+            
         # Carica vincoli
         self.constraints = self.config.get_value(f'gene.{name}.constraints', {})
         
-        self.logger.info(f"Gene {name} inizializzato con parametri: {self.params}")
+        # Aggiungi vincoli per risk_factor se non presenti
+        if 'risk_factor' not in self.constraints:
+            self.constraints['risk_factor'] = {
+                'min': 0.1,
+                'max': 1.0
+            }
+        
+        self.logger.info(f"Gene {name} inizializzato con parametri: {self.params}, risk_factor: {self.risk_factor}")
         
     def validate_params(self) -> bool:
         """
@@ -51,6 +63,13 @@ class Gene(ABC):
             True se i parametri sono validi, False altrimenti
         """
         try:
+            # Valida risk_factor
+            risk_constraints = self.constraints.get('risk_factor', {})
+            if 'min' in risk_constraints and self.risk_factor < risk_constraints['min']:
+                raise ValueError(f"Risk factor sotto il minimo: {self.risk_factor} < {risk_constraints['min']}")
+            if 'max' in risk_constraints and self.risk_factor > risk_constraints['max']:
+                raise ValueError(f"Risk factor sopra il massimo: {self.risk_factor} > {risk_constraints['max']}")
+            
             for param, value in self.params.items():
                 if param in self.constraints:
                     constraint = self.constraints[param]
@@ -77,6 +96,15 @@ class Gene(ABC):
         Applica mutazione ai parametri del gene.
         """
         if np.random.random() > self.mutation_rate:
+            return
+            
+        # Possibilità di mutare il risk_factor
+        if np.random.random() < 0.2:  # 20% di probabilità di mutare il risk_factor
+            risk_constraints = self.constraints.get('risk_factor', {})
+            min_val = risk_constraints.get('min', 0.1)
+            max_val = risk_constraints.get('max', 1.0)
+            self.risk_factor = np.random.uniform(min_val, max_val)
+            self.logger.info(f"Gene {self.name} risk_factor mutato: {self.risk_factor}")
             return
             
         param = np.random.choice(list(self.params.keys()))
@@ -121,6 +149,10 @@ class Gene(ABC):
         for param in self.params:
             if np.random.random() < 0.5:
                 child1.params[param], child2.params[param] = child2.params[param], child1.params[param]
+                
+        # Crossover del risk_factor
+        if np.random.random() < 0.5:
+            child1.risk_factor, child2.risk_factor = child2.risk_factor, child1.risk_factor
                 
         self.logger.info(f"Crossover eseguito tra due geni {self.name}")
         return child1, child2

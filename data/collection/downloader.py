@@ -499,55 +499,50 @@ class DataDownloader:
                         for i in range(1, len(data))
                     ]
                     
-                    # Calcola metriche di performance
-                    total_return = (prices[-1] / prices[0]) - 1
-                    annualized_return = ((1 + total_return) ** (252 / len(returns))) - 1
-                    volatility = np.std(returns) * np.sqrt(252)
-                    sharpe_ratio = (np.mean(returns) / np.std(returns)) * np.sqrt(252) if np.std(returns) != 0 else 0
+                    # Calcola metriche di base
+                    total_return = float((prices[-1] / prices[0]) - 1)
+                    annualized_return = float(((1 + total_return) ** (252 / len(returns))) - 1)
+                    volatility = float(np.std(returns) * np.sqrt(252))
+                    sharpe = float((np.mean(returns) / np.std(returns)) * np.sqrt(252) if np.std(returns) != 0 else 0)
+                    var_95 = float(np.percentile(returns, 5))
+                    var_99 = float(np.percentile(returns, 1))
+                    es_95 = float(np.mean([r for r in returns if r <= var_95]))
+                    es_99 = float(np.mean([r for r in returns if r <= var_99]))
                     
-                    # Calcola metriche di rischio
-                    var_95 = np.percentile(returns, 5)
-                    var_99 = np.percentile(returns, 1)
-                    es_95 = np.mean([r for r in returns if r <= var_95])
-                    es_99 = np.mean([r for r in returns if r <= var_99])
-                    
-                    # Calcola drawdown
                     cumulative = np.cumprod(1 + np.array(returns))
                     running_max = np.maximum.accumulate(cumulative)
                     drawdowns = cumulative / running_max - 1
                     max_drawdown = float(np.min(drawdowns))
                     
-                    # Prepara i dizionari delle metriche
-                    metrics = {
-                        'performance': {
-                            'total_return': float(total_return),
-                            'annualized_return': float(annualized_return),
-                            'sharpe_ratio': float(sharpe_ratio),
-                            'volatility': float(volatility)
-                        },
-                        'risk': {
-                            'value_at_risk_95': float(var_95),
-                            'value_at_risk_99': float(var_99),
-                            'expected_shortfall_95': float(es_95),
-                            'expected_shortfall_99': float(es_99),
-                            'max_drawdown': float(max_drawdown)
-                        }
-                    }
-                    
-                    indicators = {}  # Placeholder per futuri indicatori tecnici
-                    
-                    # Aggiorna il database
+                    # Aggiorna il database usando jsonb_build_object
                     stmt = text("""
                         UPDATE market_data 
-                        SET market_metrics = cast(:metrics as jsonb),
-                            technical_indicators = cast(:indicators as jsonb)
+                        SET market_metrics = jsonb_build_object(
+                            'total_return', :total_return,
+                            'annualized_return', :annualized_return,
+                            'volatility', :volatility,
+                            'sharpe_ratio', :sharpe,
+                            'var_95', :var_95,
+                            'var_99', :var_99,
+                            'es_95', :es_95,
+                            'es_99', :es_99,
+                            'max_drawdown', :max_drawdown
+                        ),
+                        technical_indicators = '{}'::jsonb
                         WHERE id = :id
                     """)
                     
                     session.execute(stmt, {
                         'id': data[-1].id,
-                        'metrics': json.dumps(metrics),
-                        'indicators': json.dumps(indicators)
+                        'total_return': total_return,
+                        'annualized_return': annualized_return,
+                        'volatility': volatility,
+                        'sharpe': sharpe,
+                        'var_95': var_95,
+                        'var_99': var_99,
+                        'es_95': es_95,
+                        'es_99': es_99,
+                        'max_drawdown': max_drawdown
                     })
                 
                 session.commit()
