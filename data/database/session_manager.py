@@ -13,13 +13,13 @@ from sqlalchemy import create_engine, Engine, text
 from sqlalchemy.ext.declarative import DeclarativeMeta
 import yaml
 
-from cli.logger.log_manager import get_logger
+from .utils import get_db_logger
 
 # Type variable per i modelli
 T = TypeVar('T', bound=DeclarativeMeta)
 
 # Setup logger
-logger = get_logger('session_manager')
+logger = get_db_logger('session_manager')
 
 class DBSessionManager:
     """

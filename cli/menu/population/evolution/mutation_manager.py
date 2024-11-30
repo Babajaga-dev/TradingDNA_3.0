@@ -158,12 +158,12 @@ class MutationManager(PopulationBaseManager):
         if available_genes:
             gene_type = random.choice(list(available_genes))
             
-            # Crea nuovo gene
+            # Crea nuovo gene con peso tra 0.1 e 5.0
             new_gene = ChromosomeGene(
                 chromosome_id=chromosome.chromosome_id,
                 gene_type=gene_type,
                 parameters=self._generate_random_parameters(gene_type),
-                weight=random.random(),
+                weight=random.uniform(0.1, 5.0),  # Genera peso nel range valido
                 is_active=True,
                 mutation_history=json.dumps({"added": datetime.now().isoformat()})
             )
@@ -193,9 +193,10 @@ class MutationManager(PopulationBaseManager):
         """
         for gene in chromosome.genes:
             if random.random() < 0.3:  # 30% chance per gene
-                # Applica piccola variazione
-                delta = random.uniform(-0.2, 0.2)
-                gene.weight = max(0.0, min(1.0, gene.weight + delta))
+                # Applica piccola variazione mantenendo il peso tra 0.1 e 5.0
+                delta = random.uniform(-0.5, 0.5)
+                new_weight = gene.weight + delta
+                gene.weight = max(0.1, min(5.0, new_weight))
                 
                 # Aggiorna storia mutazioni
                 history = json.loads(gene.mutation_history or '{}')

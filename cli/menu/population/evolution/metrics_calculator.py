@@ -200,6 +200,15 @@ class MetricsCalculator(PopulationBaseManager):
             # Aggiorna contributo performance dei geni in batch
             total_trades = metrics['trades']
             if total_trades > 0 and chromosome.genes:
+                # Ricarica i geni dalla sessione per assicurarsi che siano ancora validi
+                if session is not None:
+                    print("[DEBUG] Ricaricamento geni dalla sessione...")
+                    try:
+                        session.refresh(chromosome)
+                    except Exception as e:
+                        print(f"[DEBUG] Errore refresh cromosoma: {str(e)}")
+                        return
+                
                 active_genes = [g for g in chromosome.genes if g and g.is_active]
                 total_genes = len(active_genes)
                 
@@ -212,18 +221,36 @@ class MetricsCalculator(PopulationBaseManager):
                     
                     # Aggiorna il contributo per ogni gene nel batch
                     for gene in batch:
-                        gene.performance_contribution = gene.weight * fitness
+                        try:
+                            if session is not None:
+                                # Verifica che il gene sia ancora nella sessione
+                                try:
+                                    session.refresh(gene)
+                                except Exception as e:
+                                    print(f"[DEBUG] Skip gene {gene.chromosome_gene_id}: {str(e)}")
+                                    continue
+                            gene.performance_contribution = gene.weight * fitness
+                        except Exception as e:
+                            print(f"[DEBUG] Skip gene {gene.chromosome_gene_id}: {str(e)}")
+                            continue
                     
                     # Flush dopo ogni batch
                     if session is not None:
-                        print("[DEBUG] Flush sessione dopo batch")
-                        session.flush()
+                        try:
+                            print("[DEBUG] Flush sessione dopo batch")
+                            session.flush()
+                        except Exception as e:
+                            print(f"[DEBUG] Errore flush batch: {str(e)}")
+                            continue
             
             if session is not None:
                 print("[DEBUG] Salvataggio modifiche finali...")
                 session.add(chromosome)
-                session.flush()
-                print("[DEBUG] Modifiche salvate")
+                try:
+                    session.flush()
+                    print("[DEBUG] Modifiche salvate")
+                except Exception as e:
+                    print(f"[DEBUG] Errore salvataggio finale: {str(e)}")
             
             print(f"[DEBUG] === FINE AGGIORNAMENTO METRICHE CROMOSOMA ===\n")
             

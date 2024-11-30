@@ -15,10 +15,6 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from . import Base
-from cli.logger.log_manager import get_logger
-
-# Setup logger
-logger = get_logger('population_models')
 
 class Population(Base):
     """Modello per le popolazioni di trading."""
