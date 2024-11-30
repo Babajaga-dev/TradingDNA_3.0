@@ -8,11 +8,18 @@ from typing import Dict, Optional, Tuple
 from datetime import datetime
 import hashlib
 import json
+import random
 
 from data.database.models.population_models import Population, Chromosome, ChromosomeGene
 from .population_base import PopulationBaseManager
 from cli.menu.menu_utils import get_user_input
 from cli.logger.log_manager import get_logger
+from cli.genes.rsi_gene import RSIGene
+from cli.genes.macd_gene import MACDGene
+from cli.genes.moving_average_gene import MovingAverageGene
+from cli.genes.bollinger_gene import BollingerGene
+from cli.genes.stochastic_gene import StochasticGene
+from cli.genes.atr_gene import ATRGene
 
 # Setup logger
 logger = get_logger('population_creator')
@@ -179,3 +186,52 @@ class PopulationCreator(PopulationBaseManager):
         timestamp = datetime.now().isoformat()
         random_seed = str(hash(timestamp))
         return hashlib.sha256(f"{timestamp}{random_seed}".encode()).hexdigest()
+        
+    def _add_random_genes(self, chromosome: Chromosome) -> None:
+        """
+        Aggiunge geni casuali al cromosoma.
+        
+        Args:
+            chromosome: Cromosoma a cui aggiungere i geni
+        """
+        try:
+            # Lista dei geni disponibili
+            gene_classes = {
+                'rsi': RSIGene,
+                'macd': MACDGene,
+                'moving_average': MovingAverageGene,
+                'bollinger': BollingerGene,
+                'stochastic': StochasticGene,
+                'atr': ATRGene
+            }
+            
+            # Seleziona un numero casuale di geni (da 2 a 5)
+            num_genes = random.randint(2, 5)
+            selected_genes = random.sample(list(gene_classes.items()), num_genes)
+            
+            for gene_name, gene_class in selected_genes:
+                try:
+                    # Crea istanza del gene con parametri di default
+                    gene = gene_class()
+                    
+                    # Crea ChromosomeGene e aggiungilo alla lista dei geni del cromosoma
+                    chromosome_gene = ChromosomeGene(
+                        gene_type=gene_name,
+                        parameters=json.dumps(gene.params),
+                        weight=gene.weight,
+                        is_active=True,
+                        validation_rules=json.dumps(gene.constraints)
+                    )
+                    
+                    # Usa la relazione invece dell'ID
+                    chromosome.genes.append(chromosome_gene)
+                    
+                except Exception as e:
+                    logger.error(f"Errore creazione gene {gene_name}: {str(e)}")
+                    raise
+                    
+            logger.debug(f"Aggiunti {num_genes} geni al cromosoma {chromosome.fingerprint}")
+            
+        except Exception as e:
+            logger.error(f"Errore aggiunta geni al cromosoma: {str(e)}")
+            raise

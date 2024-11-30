@@ -1,17 +1,16 @@
 """
 Session Manager
 --------------
-Manager centralizzato per la gestione delle sessioni del database.
+Manager centralizzato per la gestione delle sessioni PostgreSQL.
 """
 
 import time
 from contextlib import contextmanager, asynccontextmanager
-from typing import Generator, AsyncGenerator, Optional, TypeVar, Type, List, Any
+from typing import Generator, AsyncGenerator, Optional, TypeVar, Type, List
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy import create_engine, Engine, event
+from sqlalchemy import create_engine, Engine, text
 from sqlalchemy.ext.declarative import DeclarativeMeta
-from sqlalchemy.pool import NullPool
 import yaml
 
 from cli.logger.log_manager import get_logger
@@ -24,7 +23,7 @@ logger = get_logger('session_manager')
 
 class DBSessionManager:
     """
-    Manager centralizzato per la gestione delle sessioni del database.
+    Manager centralizzato per la gestione delle sessioni PostgreSQL.
     Implementa il pattern Singleton per garantire un'unica istanza.
     """
     _instance = None
@@ -58,8 +57,12 @@ class DBSessionManager:
                 config = yaml.safe_load(f)
             
             self._config = config.get('database', {})
-            self._database_url = self._config.get('url', "sqlite:///data/tradingdna.db")
-            self._async_database_url = self._database_url.replace('sqlite:///', 'sqlite+aiosqlite:///')
+            self._database_url = self._config.get('url')
+            if not self._database_url:
+                raise ValueError("URL del database non configurato in security.yaml")
+                
+            # URL per connessione asincrona (sostituisce postgresql:// con postgresql+asyncpg://)
+            self._async_database_url = self._database_url.replace('postgresql://', 'postgresql+asyncpg://')
             print(f"[DEBUG] URL database: {self._database_url}")
             
         except Exception as e:
@@ -72,29 +75,33 @@ class DBSessionManager:
         try:
             print("[DEBUG] Configurazione engine database")
             
-            # Engine sincrono con configurazioni ottimizzate per SQLite
+            # Engine sincrono con configurazioni da security.yaml
             print("[DEBUG] Creazione engine sincrono")
+            engine_config = {
+                'pool_size': self._config.get('pool_size'),
+                'max_overflow': self._config.get('max_overflow'),
+                'pool_timeout': self._config.get('pool_timeout'),
+                'pool_recycle': self._config.get('pool_recycle'),
+                'echo': self._config.get('echo'),
+                'isolation_level': self._config.get('isolation_level'),
+                'pool_pre_ping': self._config.get('pool_pre_ping'),
+                'connect_args': self._config.get('connect_args', {})
+            }
+            
+            # Rimuovi i parametri None per usare i default di SQLAlchemy
+            engine_config = {k: v for k, v in engine_config.items() if v is not None}
+            if 'connect_args' in engine_config:
+                engine_config['connect_args'] = {
+                    k: v for k, v in engine_config['connect_args'].items() if v is not None
+                }
+            
             self._engine = create_engine(
                 self._database_url,
-                poolclass=NullPool,
-                echo=self._config.get('echo', False),
-                isolation_level='READ UNCOMMITTED',  # Usa READ UNCOMMITTED per ridurre i lock
-                connect_args={
-                    'timeout': 60,  # Aumenta il timeout a 60 secondi
-                    'check_same_thread': False
-                }
+                **engine_config
             )
             
-            # Configura gli eventi dell'engine
-            @event.listens_for(self._engine, 'connect')
-            def set_sqlite_pragma(dbapi_connection, connection_record):
-                cursor = dbapi_connection.cursor()
-                cursor.execute("PRAGMA journal_mode=WAL")  # Usa Write-Ahead Logging
-                cursor.execute("PRAGMA synchronous=NORMAL")  # Riduce la sincronizzazione
-                cursor.execute("PRAGMA cache_size=10000")  # Aumenta la cache
-                cursor.execute("PRAGMA temp_store=MEMORY")  # Usa la memoria per i temp files
-                cursor.execute("PRAGMA busy_timeout=60000")  # Timeout di 60 secondi
-                cursor.close()
+            # Applica i parametri runtime PostgreSQL
+            self._apply_runtime_params(self._engine)
             
             self._session_maker = sessionmaker(
                 bind=self._engine,
@@ -102,15 +109,11 @@ class DBSessionManager:
             )
             print("[DEBUG] Engine sincrono creato")
             
-            # Engine asincrono
+            # Engine asincrono con le stesse configurazioni
             print("[DEBUG] Creazione engine asincrono")
             self._async_engine = create_async_engine(
                 self._async_database_url,
-                echo=self._config.get('echo', False),
-                connect_args={
-                    'timeout': 60,
-                    'check_same_thread': False
-                }
+                **engine_config
             )
             
             self._async_session_maker = async_sessionmaker(
@@ -124,6 +127,19 @@ class DBSessionManager:
             print(f"[DEBUG] ERRORE configurazione engine: {str(e)}")
             logger.error(f"Errore configurazione engine: {str(e)}")
             raise
+
+    def _apply_runtime_params(self, engine: Engine) -> None:
+        """Applica i parametri runtime PostgreSQL dopo la connessione."""
+        runtime_params = self._config.get('runtime_params', {})
+        if runtime_params:
+            try:
+                with engine.connect() as conn:
+                    for param, value in runtime_params.items():
+                        conn.execute(text(f"SET {param} = {value}"))
+                    conn.commit()
+            except Exception as e:
+                print(f"[DEBUG] ERRORE applicazione parametri runtime: {str(e)}")
+                logger.error(f"Errore applicazione parametri runtime: {str(e)}")
 
     @property
     def engine(self) -> Engine:

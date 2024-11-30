@@ -237,15 +237,9 @@ class GeneManagerBase:
         
         # Recupera i valori di default dalla configurazione
         default_params = self.config.get_value(f'gene.{gene_type}.default', {})
-        constraints = self.config.get_value(f'gene.{gene_type}.constraints', {})
-        
         if not default_params:
-            self.console.print(f"[red]Valori di default non trovati per il gene: {gene_type}[/red]")
-            return
-            
-        # Conferma dell'operazione
-        if not Confirm.ask(f"Sei sicuro di voler resettare i parametri del gene {gene_type} ai valori di default?"):
-            self.console.print("[yellow]Operazione annullata[/yellow]")
+            self.logger.error(f"Parametri di default non trovati per il gene: {gene_type}")
+            self.console.print(f"[red]Parametri di default non trovati per il gene: {gene_type}[/red]")
             return
             
         try:
@@ -256,9 +250,12 @@ class GeneManagerBase:
                 # Aggiunge i nuovi parametri con i valori di default
                 for param_name, default_value in default_params.items():
                     # Controlla se il parametro ha dei tipi specifici nei vincoli
-                    if 'types' in constraints.get(param_name, {}):
+                    constraints = self.config.get_value(f'gene.{gene_type}.constraints', {})
+                    param_constraints = constraints.get(param_name, {})
+                    
+                    if 'types' in param_constraints:
                         # Se è un parametro di tipo stringa, lo lasciamo come stringa
-                        value_to_set = default_value
+                        value_to_set = str(default_value)
                     else:
                         # Altrimenti lo convertiamo in float e poi di nuovo in stringa
                         value_to_set = str(float(default_value))
@@ -270,10 +267,7 @@ class GeneManagerBase:
                     )
                     session.add(param)
                 
-            self.console.print("[green]Parametri resettati con successo ai valori di default[/green]")
-            
-            # Mostra i nuovi valori
-            self.view_gene_params(gene_type)
+            self.console.print(f"[green]Gene {gene_type} resettato con successo[/green]")
             
         except Exception as e:
             self.logger.error(f"Errore durante il reset dei parametri: {str(e)}")

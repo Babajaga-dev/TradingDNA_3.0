@@ -258,29 +258,41 @@ def initialize_gene_parameters(config: Dict[str, Any]) -> None:
     Args:
         config: Configurazione contenente i valori di default dei geni
     """
-    with db.session() as session:
-        # Elimina tutti i parametri esistenti
-        session.query(GeneParameter).delete()
+    try:
+        # Carica la configurazione dei geni da gene.yaml
+        with open('config/gene.yaml', 'r') as f:
+            gene_config = yaml.safe_load(f).get('gene', {})
         
-        # Ottieni la configurazione dei geni
-        gene_config = config.get('gene', {})
-        
-        # Per ogni tipo di gene
-        for gene_type, gene_data in gene_config.items():
-            if gene_type == 'base':  # Salta la configurazione base
-                continue
-                
-            # Ottieni i parametri di default
-            default_params = gene_data.get('default', {})
+        with db.session() as session:
+            # Elimina tutti i parametri esistenti
+            session.query(GeneParameter).delete()
             
-            # Salva ogni parametro nel database
-            for param_name, value in default_params.items():
-                param = GeneParameter(
-                    gene_type=gene_type,
-                    parameter_name=param_name,
-                    value=str(value)  # Converti tutto in stringa
-                )
-                session.add(param)
+            # Per ogni tipo di gene
+            for gene_type, gene_data in gene_config.items():
+                if gene_type == 'base':  # Salta la configurazione base
+                    continue
+                    
+                # Ottieni i parametri di default
+                default_params = gene_data.get('default', {})
+                if not default_params:
+                    print(f"Nessun parametro di default trovato per il gene {gene_type}")
+                    continue
+                    
+                # Salva ogni parametro nel database
+                for param_name, value in default_params.items():
+                    param = GeneParameter(
+                        gene_type=gene_type,
+                        parameter_name=param_name,
+                        value=str(value)  # Converti tutto in stringa
+                    )
+                    session.add(param)
+                    
+            session.commit()
+            print("Parametri dei geni inizializzati con successo")
+                    
+    except Exception as e:
+        print(f"Errore durante l'inizializzazione dei parametri dei geni: {str(e)}")
+        raise
 
 def update_gene_parameter(gene_type: str, parameter_name: str, value: Any) -> None:
     """

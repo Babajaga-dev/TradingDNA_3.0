@@ -7,7 +7,6 @@ Utility per la gestione del menu CLI.
 import logging
 import os
 import time
-import sqlite3
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -16,13 +15,16 @@ from typing import Callable, Optional, Any, Dict, List
 from sqlalchemy import text, func
 from tabulate import tabulate
 from rich.panel import Panel
+import psycopg2
+from urllib.parse import urlparse
+import yaml
 
 from ..config import get_config_loader
 from data.database.session_manager import DBSessionManager
 from data.database.models.models import (
     initialize_gene_parameters,
     MarketData, Symbol, Exchange,
-    initialize_database, DATABASE_URL
+    initialize_database
 )
 from .gene_manager import GeneManager
 from .download_manager import DownloadManager
@@ -33,6 +35,42 @@ logger = get_logger('menu_utils')
 
 # Ottieni l'istanza del session manager
 db = DBSessionManager()
+
+__all__ = [
+    'get_user_input',
+    'print_table',
+    'confirm_action',
+    'force_close_connections',
+    'shutdown_all_loggers',
+    'reset_system',
+    'manage_parameters',
+    'get_candles_per_day',
+    'view_historical_data',
+    'genetic_optimization_placeholder'
+]
+
+def shutdown_all_loggers():
+    """Chiude tutti i logger e i loro handler."""
+    # Ottieni tutti i logger
+    loggers = [logging.getLogger()] + list(logging.Logger.manager.loggerDict.values())
+    
+    # Chiudi tutti gli handler di ogni logger
+    for logger in loggers:
+        if hasattr(logger, 'handlers'):
+            for handler in logger.handlers[:]:
+                try:
+                    handler.close()
+                    logger.removeHandler(handler)
+                except:
+                    pass
+    
+    # Chiudi il LogManager
+    from cli.logger import get_log_manager
+    log_manager = get_log_manager()
+    log_manager.shutdown()
+    
+    # Resetta il logging di base
+    logging.shutdown()
 
 def get_user_input(
     prompt: str,
@@ -151,64 +189,6 @@ def confirm_action(prompt: str) -> bool:
     )
     return response and response.lower() == 's'
 
-def force_close_connections():
-    """Forza la chiusura di tutte le connessioni al database."""
-    try:
-        # Chiudi tutte le connessioni SQLite
-        sqlite3.connect(':memory:').close()
-        
-        # Chiudi gli engine del DBSessionManager
-        if hasattr(db.engine, 'dispose'):
-            db.engine.dispose()
-        if hasattr(db.async_engine, 'dispose'):
-            asyncio.get_event_loop().run_until_complete(db.async_engine.dispose())
-        
-        # Forza il garbage collector
-        import gc
-        gc.collect()
-        
-        # Attendi un momento per permettere la chiusura delle connessioni
-        time.sleep(5)
-        
-        # Verifica se ci sono ancora connessioni attive
-        try:
-            # Prova ad aprire il database in modalità esclusiva
-            test_conn = sqlite3.connect(
-                "data/tradingdna.db", 
-                timeout=1,
-                isolation_level='EXCLUSIVE'
-            )
-            test_conn.close()
-        except sqlite3.OperationalError:
-            print("Attenzione: Ci sono ancora connessioni attive al database")
-            time.sleep(5)
-            
-    except Exception as e:
-        print(f"Errore durante la chiusura delle connessioni: {e}")
-
-def shutdown_all_loggers():
-    """Chiude tutti i logger e i loro handler."""
-    # Ottieni tutti i logger
-    loggers = [logging.getLogger()] + list(logging.Logger.manager.loggerDict.values())
-    
-    # Chiudi tutti gli handler di ogni logger
-    for logger in loggers:
-        if hasattr(logger, 'handlers'):
-            for handler in logger.handlers[:]:
-                try:
-                    handler.close()
-                    logger.removeHandler(handler)
-                except:
-                    pass
-    
-    # Chiudi il LogManager
-    from cli.logger import get_log_manager
-    log_manager = get_log_manager()
-    log_manager.shutdown()
-    
-    # Resetta il logging di base
-    logging.shutdown()
-
 def reset_system():
     """Resetta il sistema eliminando database, log e ricreando le tabelle."""
     try:
@@ -244,37 +224,66 @@ def reset_system():
             log_dir.mkdir(exist_ok=True)
             print("Directory log ricreata.")
         
-        # 4. Gestione eliminazione database
-        db_path = Path("data/tradingdna.db")
-        journal_path = Path("data/tradingdna.db-journal")
-        wal_path = Path("data/tradingdna.db-wal")
-        shm_path = Path("data/tradingdna.db-shm")
+        # 4. Reset del database PostgreSQL
+        print("Reset del database PostgreSQL...")
         
-        if any(p.exists() for p in [db_path, journal_path, wal_path, shm_path]):
-            print("Eliminazione database e file correlati...")
-            
-            # Forza la chiusura delle connessioni
-            force_close_connections()
-            
-            # Attendi un momento per permettere la chiusura delle connessioni
-            time.sleep(2)
-            
-            # Elimina tutti i file correlati al database
-            for path in [db_path, journal_path, wal_path, shm_path]:
-                try:
-                    if path.exists():
-                        os.chmod(path, 0o777)
-                        path.unlink()
-                except Exception as e:
-                    print(f"Avviso: Impossibile eliminare {path}: {e}")
-            
-            print("Database e file correlati eliminati.")
+        # Carica la configurazione del database da security.yaml
+        try:
+            with open('config/security.yaml', 'r') as f:
+                security_config = yaml.safe_load(f)
+                db_config = security_config.get('database', {})
+                if not db_config:
+                    raise ValueError("Configurazione database non trovata in security.yaml")
+        except Exception as e:
+            print(f"Errore caricamento configurazione database: {e}")
+            raise
         
-        # 5. Ricrea il database da zero
+        # Forza la chiusura delle connessioni
+        force_close_connections()
+        
+        # Attendi un momento per permettere la chiusura delle connessioni
+        time.sleep(2)
+        
+        try:
+            # Connessione al database postgres per eliminare e ricreare il database
+            db_url = db_config['url']
+            parsed = urlparse(db_url)
+            db_name = parsed.path[1:]  # Rimuove lo slash iniziale
+            
+            # Costruisce URL per database postgres
+            postgres_url = f"{parsed.scheme}://{parsed.username}:{parsed.password}@{parsed.hostname}:{parsed.port}/postgres"
+            
+            # Crea una connessione separata al database postgres con autocommit=True
+            conn = psycopg2.connect(postgres_url)
+            conn.autocommit = True
+            
+            try:
+                with conn.cursor() as cur:
+                    # Termina tutte le connessioni al database
+                    cur.execute(f"""
+                        SELECT pg_terminate_backend(pg_stat_activity.pid)
+                        FROM pg_stat_activity
+                        WHERE pg_stat_activity.datname = %s
+                        AND pid <> pg_backend_pid()
+                    """, (db_name,))
+                    
+                    # Elimina il database se esiste
+                    cur.execute(f"DROP DATABASE IF EXISTS {db_name}")
+                    
+                    # Ricrea il database
+                    cur.execute(f"CREATE DATABASE {db_name}")
+                
+                print(f"Database {db_name} ricreato con successo")
+                
+            finally:
+                conn.close()
+            
+        except Exception as e:
+            print(f"Errore durante il reset del database: {e}")
+            raise
+        
+        # 5. Inizializza il database con le nuove tabelle
         print("Inizializzazione nuovo database...")
-        os.makedirs(db_path.parent, exist_ok=True)
-        
-        # Inizializza il database con le nuove tabelle
         initialize_database()
         
         # 6. Inserisci Binance con il nome corretto
@@ -289,7 +298,7 @@ def reset_system():
                 session.execute(
                     text("""
                     UPDATE exchanges 
-                    SET is_active = 1, 
+                    SET is_active = true, 
                         updated_at = CURRENT_TIMESTAMP 
                     WHERE name = 'binance'
                     """)
@@ -299,7 +308,7 @@ def reset_system():
                 session.execute(
                     text("""
                     INSERT INTO exchanges (name, is_active, created_at, updated_at)
-                    VALUES ('binance', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    VALUES ('binance', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """)
                 )
             
@@ -307,8 +316,10 @@ def reset_system():
         
         # 7. Inizializza i parametri dei geni dai valori di default
         print("Inizializzazione parametri dei geni...")
-        config = get_config_loader().config
-        initialize_gene_parameters(config)
+        # Carica la configurazione di sistema da logging.yaml
+        with open("config/logging.yaml", 'r') as f:
+            system_config = yaml.safe_load(f).get('system', {})
+        initialize_gene_parameters(system_config)
         print("Parametri dei geni inizializzati dai valori di default")
         
         # 8. Reset dei geni
@@ -334,15 +345,57 @@ def reset_system():
         print(f"\nErrore durante il reset del sistema: {str(e)}")
         return "Errore durante il reset del sistema."
 
+def force_close_connections():
+    """Forza la chiusura di tutte le connessioni al database."""
+    try:
+        # Chiudi gli engine del DBSessionManager
+        if hasattr(db.engine, 'dispose'):
+            db.engine.dispose()
+        if hasattr(db.async_engine, 'dispose'):
+            asyncio.get_event_loop().run_until_complete(db.async_engine.dispose())
+        
+        # Forza il garbage collector
+        import gc
+        gc.collect()
+        
+        # Attendi un momento per permettere la chiusura delle connessioni
+        time.sleep(5)
+        
+        # Verifica se ci sono ancora connessioni attive
+        try:
+            # Carica la configurazione del database da security.yaml
+            with open('config/security.yaml', 'r') as f:
+                security_config = yaml.safe_load(f)
+                db_config = security_config.get('database', {})
+                if not db_config:
+                    raise ValueError("Configurazione database non trovata in security.yaml")
+                
+            test_conn = psycopg2.connect(db_config['url'])
+            test_conn.close()
+        except psycopg2.OperationalError:
+            print("Attenzione: Ci sono ancora connessioni attive al database")
+            time.sleep(5)
+            
+    except Exception as e:
+        print(f"Errore durante la chiusura delle connessioni: {str(e)}")
+
 def manage_parameters():
     """Gestisce i parametri del sistema."""
-    config = get_config_loader()
-    current_config = config.config
-    return f"""Parametri correnti:
-Log Level: {current_config['system']['log_level']}
-Trading Mode: {current_config['portfolio']['mode']}
-Symbols: {', '.join(current_config['portfolio']['symbols'])}
-Timeframes: {', '.join(current_config['portfolio']['timeframes'])}"""
+    try:
+        config = get_config_loader()
+        current_config = config.config
+        
+        # Carica la configurazione del portfolio
+        with open('config/portfolio.yaml', 'r') as f:
+            portfolio_config = yaml.safe_load(f)
+        
+        return f"""Parametri correnti:
+Log Level: {current_config.get('system', {}).get('log_level', 'N/A')}
+Trading Mode: {portfolio_config.get('portfolio', {}).get('mode', 'N/A')}
+Symbols: {', '.join(portfolio_config.get('portfolio', {}).get('symbols', []))}
+Timeframes: {', '.join(portfolio_config.get('portfolio', {}).get('timeframes', []))}"""
+    except Exception as e:
+        return f"Errore lettura configurazione: {str(e)}"
 
 def get_candles_per_day(timeframe: str) -> int:
     """Calcola il numero di candele per giorno per un dato timeframe."""
@@ -461,3 +514,4 @@ def genetic_optimization_placeholder(*args, **kwargs):
     print("\n[In Sviluppo] Ottimizzazione genetica dei parametri")
     input("\nPremi INVIO per continuare...")
     return None
+

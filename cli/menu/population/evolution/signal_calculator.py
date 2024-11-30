@@ -9,7 +9,7 @@ import time
 import random
 import numpy as np
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from data.database.models.population_models import Chromosome, ChromosomeGene
 from data.database.models.models import MarketData
@@ -60,6 +60,26 @@ class SignalCalculator(PopulationBaseManager):
         super().__init__()
         print("[DEBUG] SignalCalculator inizializzato")
         
+    def _get_chromosome(self, chromosome_id: int, session: Session) -> Optional[Chromosome]:
+        """
+        Carica un cromosoma con tutte le sue relazioni.
+        
+        Args:
+            chromosome_id: ID del cromosoma
+            session: Sessione database attiva
+            
+        Returns:
+            Chromosome: Cromosoma caricato con relazioni
+        """
+        return (
+            session.query(Chromosome)
+            .options(
+                selectinload(Chromosome.genes)
+            )
+            .filter(Chromosome.chromosome_id == chromosome_id)
+            .first()
+        )
+        
     @retry_on_db_lock
     def calculate_signals(
         self, 
@@ -72,6 +92,13 @@ class SignalCalculator(PopulationBaseManager):
         
         try:
             print(f"[DEBUG] Inizio calcolo segnali per cromosoma {chromosome.chromosome_id}")
+            
+            # Ricarica il cromosoma con le sue relazioni
+            if session is not None:
+                print("[DEBUG] Ricaricamento cromosoma con relazioni...")
+                chromosome = self._get_chromosome(chromosome.chromosome_id, session)
+                if not chromosome:
+                    raise ValueError(f"Cromosoma {chromosome.chromosome_id} non trovato")
             
             # Filtra solo i geni attivi
             active_genes = [g for g in chromosome.genes if g and g.is_active]
@@ -135,14 +162,12 @@ class SignalCalculator(PopulationBaseManager):
             for gene in genes:
                 print(f"[DEBUG] Calcolo segnali per gene {gene.gene_type}")
                 
-                # Genera segnali in batch
-                signal_values = rng.uniform(-1, 1, size=len(market_data))
-                
-                # Crea dizionario dei segnali pesati
-                gene_signals = {
-                    timestamp: float(signal_values[i]) * gene.weight
-                    for i, timestamp in enumerate(timestamps)
-                }
+                # Genera segnali uno alla volta invece che in batch
+                gene_signals = {}
+                for timestamp in timestamps:
+                    # Genera un singolo segnale per ogni timestamp
+                    signal = float(rng.uniform(-1, 1))
+                    gene_signals[timestamp] = signal * gene.weight
                 
                 batch_signals.append(gene_signals)
                 print(f"[DEBUG] Generati {len(gene_signals)} segnali pesati per gene {gene.gene_type}")

@@ -8,8 +8,9 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, 
-    DateTime, ForeignKey, JSON, CheckConstraint
+    DateTime, ForeignKey, JSON, CheckConstraint, Index
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -40,13 +41,23 @@ class Population(Base):
     diversity_threshold = Column(Float, default=0.7)
     
     # Configurazione trading
-    symbol_id = Column(Integer, ForeignKey('symbols.id'), nullable=False)
+    symbol_id = Column(Integer, ForeignKey('symbols.id', ondelete='CASCADE'), nullable=False)
     timeframe = Column(String(10), nullable=False)
     
     # Relazioni
-    symbol = relationship("Symbol", backref="populations")
-    chromosomes = relationship("Chromosome", back_populates="population")
-    evolution_history = relationship("EvolutionHistory", back_populates="population")
+    symbol = relationship("Symbol", backref="populations", lazy='joined')
+    chromosomes = relationship(
+        "Chromosome",
+        back_populates="population",
+        cascade="all, delete-orphan",
+        lazy='selectin'  # Eager loading per performance
+    )
+    evolution_history = relationship(
+        "EvolutionHistory",
+        back_populates="population",
+        cascade="all, delete-orphan",
+        lazy='selectin'
+    )
     
     # Vincoli
     __table_args__ = (
@@ -56,6 +67,8 @@ class Population(Base):
         CheckConstraint('generation_interval BETWEEN 1 AND 24'),
         CheckConstraint('diversity_threshold BETWEEN 0.5 AND 1.0'),
         CheckConstraint("status IN ('active', 'paused', 'archived')"),
+        Index('idx_population_symbol', 'symbol_id'),
+        Index('idx_population_status', 'status')
     )
     
     def __repr__(self):
@@ -66,28 +79,50 @@ class Chromosome(Base):
     __tablename__ = 'chromosomes'
     
     chromosome_id = Column(Integer, primary_key=True)
-    population_id = Column(Integer, ForeignKey('populations.population_id'), nullable=False)
+    population_id = Column(Integer, ForeignKey('populations.population_id', ondelete='CASCADE'), nullable=False)
     fingerprint = Column(String(64), nullable=False)
     generation = Column(Integer, nullable=False)
     age = Column(Integer, default=0)
     created_at = Column(DateTime, default=func.now())
-    parent1_id = Column(Integer, ForeignKey('chromosomes.chromosome_id'))
-    parent2_id = Column(Integer, ForeignKey('chromosomes.chromosome_id'))
+    parent1_id = Column(Integer, ForeignKey('chromosomes.chromosome_id', ondelete='SET NULL'))
+    parent2_id = Column(Integer, ForeignKey('chromosomes.chromosome_id', ondelete='SET NULL'))
     status = Column(String(20), default='active')
-    performance_metrics = Column(JSON)
-    weight_distribution = Column(JSON)
+    performance_metrics = Column(JSONB)
+    weight_distribution = Column(JSONB)
     last_test_date = Column(DateTime)
-    test_results = Column(JSON)
+    test_results = Column(JSONB)
     
     # Relazioni
-    population = relationship("Population", back_populates="chromosomes")
-    genes = relationship("ChromosomeGene", back_populates="chromosome")
-    parent1 = relationship("Chromosome", remote_side=[chromosome_id], foreign_keys=[parent1_id])
-    parent2 = relationship("Chromosome", remote_side=[chromosome_id], foreign_keys=[parent2_id])
+    population = relationship(
+        "Population",
+        back_populates="chromosomes",
+        lazy='joined'
+    )
+    genes = relationship(
+        "ChromosomeGene",
+        back_populates="chromosome",
+        cascade="all, delete-orphan",
+        lazy='selectin'
+    )
+    parent1 = relationship(
+        "Chromosome",
+        remote_side=[chromosome_id],
+        foreign_keys=[parent1_id],
+        lazy='selectin'
+    )
+    parent2 = relationship(
+        "Chromosome",
+        remote_side=[chromosome_id],
+        foreign_keys=[parent2_id],
+        lazy='selectin'
+    )
     
-    # Vincoli
+    # Vincoli e indici
     __table_args__ = (
         CheckConstraint("status IN ('active', 'testing', 'archived')"),
+        Index('idx_chromosome_population', 'population_id'),
+        Index('idx_chromosome_fingerprint', 'fingerprint'),
+        Index('idx_chromosome_status', 'status')
     )
     
     def __repr__(self):
@@ -98,22 +133,29 @@ class ChromosomeGene(Base):
     __tablename__ = 'chromosome_genes'
     
     chromosome_gene_id = Column(Integer, primary_key=True)
-    chromosome_id = Column(Integer, ForeignKey('chromosomes.chromosome_id'), nullable=False)
+    chromosome_id = Column(Integer, ForeignKey('chromosomes.chromosome_id', ondelete='CASCADE'), nullable=False)
     gene_type = Column(String(50), nullable=False)
-    parameters = Column(JSON, nullable=False)
+    parameters = Column(JSONB, nullable=False)
     weight = Column(Float, nullable=False)
     is_active = Column(Boolean, default=True)
     performance_contribution = Column(Float, default=0.0)
     last_mutation_date = Column(DateTime)
-    mutation_history = Column(JSON)
-    validation_rules = Column(JSON)
+    mutation_history = Column(JSONB)
+    validation_rules = Column(JSONB)
     
     # Relazioni
-    chromosome = relationship("Chromosome", back_populates="genes")
+    chromosome = relationship(
+        "Chromosome",
+        back_populates="genes",
+        lazy='joined'
+    )
     
-    # Vincoli
+    # Vincoli e indici
     __table_args__ = (
-        CheckConstraint('weight BETWEEN 0.0 AND 1.0'),
+        CheckConstraint('weight BETWEEN 0.1 AND 5.0'),
+        Index('idx_gene_chromosome', 'chromosome_id'),
+        Index('idx_gene_type', 'gene_type'),
+        Index('idx_gene_active', 'is_active')
     )
     
     def __repr__(self):
@@ -124,20 +166,30 @@ class EvolutionHistory(Base):
     __tablename__ = 'evolution_history'
     
     history_id = Column(Integer, primary_key=True)
-    population_id = Column(Integer, ForeignKey('populations.population_id'), nullable=False)
+    population_id = Column(Integer, ForeignKey('populations.population_id', ondelete='CASCADE'), nullable=False)
     generation = Column(Integer, nullable=False)
     best_fitness = Column(Float, nullable=False)
     avg_fitness = Column(Float, nullable=False)
     diversity_metric = Column(Float, nullable=False)
     mutation_rate = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=func.now())
-    generation_stats = Column(JSON)
-    mutation_stats = Column(JSON)
-    selection_stats = Column(JSON)
-    performance_breakdown = Column(JSON)
+    generation_stats = Column(JSONB)
+    mutation_stats = Column(JSONB)
+    selection_stats = Column(JSONB)
+    performance_breakdown = Column(JSONB)
     
     # Relazioni
-    population = relationship("Population", back_populates="evolution_history")
+    population = relationship(
+        "Population",
+        back_populates="evolution_history",
+        lazy='joined'
+    )
+    
+    # Vincoli e indici
+    __table_args__ = (
+        Index('idx_history_population', 'population_id'),
+        Index('idx_history_generation', 'generation')
+    )
     
     def __repr__(self):
         return f"<EvolutionHistory(id={self.history_id}, population={self.population_id}, generation={self.generation})>"

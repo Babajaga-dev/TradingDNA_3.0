@@ -14,7 +14,7 @@ import time
 import random
 
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from data.database.models.population_models import (
     Population, Chromosome, ChromosomeGene, EvolutionHistory
 )
@@ -91,6 +91,27 @@ class EvolutionTester(PopulationBaseManager):
             self.logger.error(f"Errore caricamento configurazione test: {str(e)}")
             raise
 
+    def _get_population(self, population_id: int, session: Session) -> Optional[Population]:
+        """
+        Carica una popolazione con tutte le sue relazioni.
+        
+        Args:
+            population_id: ID della popolazione
+            session: Sessione database attiva
+            
+        Returns:
+            Population: Popolazione caricata con relazioni
+        """
+        return (
+            session.query(Population)
+            .options(
+                selectinload(Population.chromosomes)
+                .selectinload(Chromosome.genes)
+            )
+            .filter(Population.population_id == population_id)
+            .first()
+        )
+
     @retry_on_db_lock
     def run_test(self, population_id: int, generations: int = 5, session: Optional[Session] = None) -> str:
         """
@@ -135,7 +156,7 @@ class EvolutionTester(PopulationBaseManager):
         """
         # Verifica popolazione
         print(f"[DEBUG] Verifica popolazione {population_id}")
-        population = session.get(Population, population_id)
+        population = self._get_population(population_id, session)
         if not population:
             return "Popolazione non trovata"
             
@@ -153,7 +174,7 @@ class EvolutionTester(PopulationBaseManager):
             
             # Ricarica popolazione nella sessione corrente
             print(f"[DEBUG] Ricarico popolazione {population_id} nella sessione")
-            population = session.get(Population, population_id)
+            population = self._get_population(population_id, session)
             
             # Selezione genitori
             print("[DEBUG] Selezione genitori")
@@ -203,7 +224,7 @@ class EvolutionTester(PopulationBaseManager):
         
         # Test finale fitness
         print("[DEBUG] Calcolo fitness finale")
-        population = session.get(Population, population_id)
+        population = self._get_population(population_id, session)
         final_stats = self.fitness.calculate_population_fitness(population)
         
         # Genera report

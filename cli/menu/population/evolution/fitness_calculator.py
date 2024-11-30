@@ -10,7 +10,7 @@ import time
 import random
 from datetime import datetime
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import OperationalError
 
 from data.database.models.population_models import Population, Chromosome
@@ -91,6 +91,27 @@ class FitnessCalculator(PopulationBaseManager):
             print(f"[DEBUG] ERRORE caricamento config fitness: {str(e)}")
             logger.error(f"Errore caricamento configurazione test: {str(e)}")
             raise
+
+    def _get_population(self, population_id: int, session: Session) -> Optional[Population]:
+        """
+        Carica una popolazione con tutte le sue relazioni.
+        
+        Args:
+            population_id: ID della popolazione
+            session: Sessione database attiva
+            
+        Returns:
+            Population: Popolazione caricata con relazioni
+        """
+        return (
+            session.query(Population)
+            .options(
+                selectinload(Population.chromosomes)
+                .selectinload(Chromosome.genes)
+            )
+            .filter(Population.population_id == population_id)
+            .first()
+        )
 
     @retry_on_db_lock
     def reset_test_data(self, population: Population, session: Session) -> None:
@@ -185,7 +206,9 @@ class FitnessCalculator(PopulationBaseManager):
         
         # Ricarica la popolazione dopo il reset
         print("[DEBUG] Ricaricamento popolazione...")
-        population = session.get(Population, population.population_id)
+        population = self._get_population(population.population_id, session)
+        if not population:
+            raise ValueError(f"Popolazione {population.population_id} non trovata")
         
         # Inizializza statistiche
         stats = {

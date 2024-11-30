@@ -59,216 +59,78 @@ def create_postgres_db():
         print(f"Errore creazione database: {str(e)}")
         sys.exit(1)
 
+def execute_sql_file(conn, filename):
+    """Esegue uno script SQL da file."""
+    try:
+        cur = conn.cursor()
+        with open(filename, 'r') as f:
+            sql = f.read()
+            cur.execute(sql)
+        conn.commit()
+        print(f"Script {filename} eseguito con successo")
+    except Exception as e:
+        print(f"Errore esecuzione {filename}: {str(e)}")
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+def reset_database(conn):
+    """Resetta il database eliminando tutte le tabelle."""
+    try:
+        cur = conn.cursor()
+        
+        # Disabilita temporaneamente i vincoli di foreign key
+        cur.execute("SET session_replication_role = 'replica';")
+        
+        # Elimina tutte le tabelle
+        cur.execute("""
+            DO $$ DECLARE
+                r RECORD;
+            BEGIN
+                FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                    EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
+                END LOOP;
+            END $$;
+        """)
+        
+        # Riabilita i vincoli di foreign key
+        cur.execute("SET session_replication_role = 'origin';")
+        
+        conn.commit()
+        print("Database resettato con successo")
+        
+    except Exception as e:
+        print(f"Errore reset database: {str(e)}")
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
 def setup_postgres_schema():
     """Configura lo schema PostgreSQL."""
     try:
         config = load_config()
         conn = psycopg2.connect(config['url'])
-        cur = conn.cursor()
         
-        print("Creazione schema PostgreSQL...")
+        # Reset database
+        print("\nReset database...")
+        reset_database(conn)
         
-        # Crea funzione per updated_at
-        print("Creazione funzione update_timestamp...")
-        cur.execute("""
-            CREATE OR REPLACE FUNCTION update_timestamp()
-            RETURNS TRIGGER AS $$
-            BEGIN
-                NEW.updated_at = CURRENT_TIMESTAMP;
-                RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
-        """)
+        # Esegue script creazione tabelle base
+        print("\nCreazione schema base...")
+        execute_sql_file(conn, 'data/database/migrations/create_base_tables_pg.sql')
         
-        # Crea tabella exchanges
-        print("Creazione tabella exchanges...")
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS exchanges (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(50) UNIQUE NOT NULL,
-                is_active BOOLEAN DEFAULT true,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        # Esegue script aggiornamento struttura
+        print("\nAggiornamento struttura tabelle...")
+        execute_sql_file(conn, 'data/database/migrations/update_tables_structure.sql')
         
-        # Trigger per exchanges
-        cur.execute("""
-            DROP TRIGGER IF EXISTS update_exchanges_timestamp ON exchanges;
-            CREATE TRIGGER update_exchanges_timestamp
-                BEFORE UPDATE ON exchanges
-                FOR EACH ROW
-                EXECUTE FUNCTION update_timestamp();
-        """)
-        
-        # Crea tabella symbols
-        print("Creazione tabella symbols...")
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS symbols (
-                id SERIAL PRIMARY KEY,
-                exchange_id INTEGER NOT NULL,
-                name VARCHAR(20) NOT NULL,
-                base_asset VARCHAR(10) NOT NULL,
-                quote_asset VARCHAR(10) NOT NULL,
-                is_active BOOLEAN DEFAULT true,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (exchange_id) REFERENCES exchanges(id),
-                UNIQUE (exchange_id, name)
-            )
-        """)
-        
-        # Trigger per symbols
-        cur.execute("""
-            DROP TRIGGER IF EXISTS update_symbols_timestamp ON symbols;
-            CREATE TRIGGER update_symbols_timestamp
-                BEFORE UPDATE ON symbols
-                FOR EACH ROW
-                EXECUTE FUNCTION update_timestamp();
-        """)
-        
-        # Crea tabella market_data
-        print("Creazione tabella market_data...")
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS market_data (
-                id SERIAL PRIMARY KEY,
-                exchange_id INTEGER NOT NULL,
-                symbol_id INTEGER NOT NULL,
-                timeframe VARCHAR(10) NOT NULL,
-                timestamp TIMESTAMP NOT NULL,
-                open DOUBLE PRECISION NOT NULL,
-                high DOUBLE PRECISION NOT NULL,
-                low DOUBLE PRECISION NOT NULL,
-                close DOUBLE PRECISION NOT NULL,
-                volume DOUBLE PRECISION NOT NULL,
-                is_valid BOOLEAN DEFAULT true,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (exchange_id) REFERENCES exchanges(id),
-                FOREIGN KEY (symbol_id) REFERENCES symbols(id)
-            )
-        """)
-        
-        # Trigger per market_data
-        cur.execute("""
-            DROP TRIGGER IF EXISTS update_market_data_timestamp ON market_data;
-            CREATE TRIGGER update_market_data_timestamp
-                BEFORE UPDATE ON market_data
-                FOR EACH ROW
-                EXECUTE FUNCTION update_timestamp();
-        """)
-        
-        # Crea tabella populations
-        print("Creazione tabella populations...")
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS populations (
-                population_id SERIAL PRIMARY KEY,
-                name VARCHAR(100) NOT NULL,
-                description TEXT,
-                max_size INTEGER NOT NULL,
-                current_generation INTEGER DEFAULT 0,
-                performance_score DOUBLE PRECISION DEFAULT 0.0,
-                diversity_score DOUBLE PRECISION DEFAULT 0.0,
-                mutation_rate DOUBLE PRECISION NOT NULL,
-                selection_pressure DOUBLE PRECISION NOT NULL,
-                generation_interval INTEGER NOT NULL,
-                diversity_threshold DOUBLE PRECISION NOT NULL,
-                timeframe VARCHAR(10) NOT NULL,
-                status VARCHAR(20) DEFAULT 'active',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Trigger per populations
-        cur.execute("""
-            DROP TRIGGER IF EXISTS update_populations_timestamp ON populations;
-            CREATE TRIGGER update_populations_timestamp
-                BEFORE UPDATE ON populations
-                FOR EACH ROW
-                EXECUTE FUNCTION update_timestamp();
-        """)
-        
-        # Crea tabella chromosomes
-        print("Creazione tabella chromosomes...")
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS chromosomes (
-                chromosome_id SERIAL PRIMARY KEY,
-                population_id INTEGER NOT NULL,
-                performance_metrics TEXT,
-                status VARCHAR(20) DEFAULT 'active',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (population_id) REFERENCES populations(population_id)
-            )
-        """)
-        
-        # Trigger per chromosomes
-        cur.execute("""
-            DROP TRIGGER IF EXISTS update_chromosomes_timestamp ON chromosomes;
-            CREATE TRIGGER update_chromosomes_timestamp
-                BEFORE UPDATE ON chromosomes
-                FOR EACH ROW
-                EXECUTE FUNCTION update_timestamp();
-        """)
-        
-        # Crea tabella chromosome_genes
-        print("Creazione tabella chromosome_genes...")
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS chromosome_genes (
-                gene_id SERIAL PRIMARY KEY,
-                chromosome_id INTEGER NOT NULL,
-                gene_type VARCHAR(50) NOT NULL,
-                parameters TEXT NOT NULL,
-                weight DOUBLE PRECISION NOT NULL,
-                performance_contribution DOUBLE PRECISION DEFAULT 0.0,
-                is_active BOOLEAN DEFAULT true,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (chromosome_id) REFERENCES chromosomes(chromosome_id)
-            )
-        """)
-        
-        # Trigger per chromosome_genes
-        cur.execute("""
-            DROP TRIGGER IF EXISTS update_chromosome_genes_timestamp ON chromosome_genes;
-            CREATE TRIGGER update_chromosome_genes_timestamp
-                BEFORE UPDATE ON chromosome_genes
-                FOR EACH ROW
-                EXECUTE FUNCTION update_timestamp();
-        """)
-        
-        # Funzione di validazione per chromosome_genes
-        cur.execute("""
-            CREATE OR REPLACE FUNCTION validate_chromosome_gene()
-            RETURNS TRIGGER AS $$
-            BEGIN
-                IF NEW.weight < 0 OR NEW.weight > 1 THEN
-                    RAISE EXCEPTION 'Weight must be between 0 and 1';
-                END IF;
-                RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
-        """)
-        
-        # Trigger di validazione per chromosome_genes
-        cur.execute("""
-            DROP TRIGGER IF EXISTS validate_chromosome_gene_insert ON chromosome_genes;
-            CREATE TRIGGER validate_chromosome_gene_insert
-                BEFORE INSERT ON chromosome_genes
-                FOR EACH ROW
-                EXECUTE FUNCTION validate_chromosome_gene();
-        """)
-        
-        conn.commit()
-        print("Schema PostgreSQL creato con successo")
+        print("\nSchema PostgreSQL configurato con successo")
         
     except Exception as e:
         print(f"Errore setup schema: {str(e)}")
-        conn.rollback()
         sys.exit(1)
     finally:
-        cur.close()
         conn.close()
 
 def get_column_names(engine, table_name):
@@ -335,16 +197,28 @@ def migrate_data():
                 column_names = ', '.join(columns)
                 placeholders = ', '.join(['%s'] * len(columns))
                 
+                # Costruisci la query con ON CONFLICT DO NOTHING
+                id_column = 'id'
+                if table == 'populations':
+                    id_column = 'population_id'
+                elif table == 'chromosomes':
+                    id_column = 'chromosome_id'
+                elif table == 'chromosome_genes':
+                    id_column = 'chromosome_gene_id'
+                    
+                query = f"""
+                    INSERT INTO {table} ({column_names})
+                    VALUES ({placeholders})
+                    ON CONFLICT ({id_column}) DO NOTHING
+                """
+                
                 for i in range(0, total, batch_size):
                     batch = rows[i:i + batch_size]
                     # Converti ogni riga
                     values = [convert_row(row, columns) for row in batch]
                     
                     # Inserisci batch in PostgreSQL
-                    pg_cur.executemany(
-                        f"INSERT INTO {table} ({column_names}) VALUES ({placeholders})",
-                        values
-                    )
+                    pg_cur.executemany(query, values)
                     pg_conn.commit()
                     
                     print(f"Migrati {min(i + batch_size, total)}/{total} record")

@@ -49,6 +49,17 @@ class ConfigLoader:
         # Crea directory config se non esiste
         self.config_dir.mkdir(exist_ok=True)
         
+        # Carica automaticamente le configurazioni all'inizializzazione
+        try:
+            self.load_all_configs()
+        except ConfigLoadError as e:
+            # Se il file non esiste, crea le configurazioni di default
+            if "No such file or directory" in str(e):
+                self.create_default_configs()
+                self.load_all_configs()
+            else:
+                raise e
+        
     def add_validator(self, validator: callable):
         """
         Aggiunge un validatore per la configurazione.
@@ -120,6 +131,9 @@ class ConfigLoader:
                 config = self.load_config_file(filename)
                 self.merge_config(merged_config, config)
             except ConfigLoadError as e:
+                # Se il file non esiste, continua con il prossimo
+                if "No such file or directory" in str(e):
+                    continue
                 raise ConfigLoadError(f"Errore nel caricamento di {filename}: {str(e)}")
                 
         # Valida la configurazione completa
@@ -277,8 +291,28 @@ class ConfigLoader:
             },
             'security.yaml': {
                 'security': {
-                    'enable_backup': True,
-                    'backup_interval': 86400
+                    'backup_interval': 86400,
+                    'enable_backup': True
+                },
+                'database': {
+                    'url': 'postgresql://postgres:ninja@localhost:5432/tradingdna',
+                    'pool_size': 20,
+                    'max_overflow': 30,
+                    'pool_timeout': 60,
+                    'pool_recycle': 3600,
+                    'echo': False,
+                    'isolation_level': 'READ COMMITTED',
+                    'pool_pre_ping': True,
+                    'connect_args': {
+                        'application_name': 'TradingDNA',
+                        'client_encoding': 'utf8',
+                        'options': '-c timezone=UTC'
+                    },
+                    'runtime_params': {
+                        'statement_timeout': 60000,
+                        'lock_timeout': 10000,
+                        'idle_in_transaction_session_timeout': 600000
+                    }
                 }
             },
             'gene.yaml': {
@@ -288,6 +322,88 @@ class ConfigLoader:
                         'crossover_rate': 0.7,
                         'weight': 1.0,
                         'test_period_days': 30
+                    },
+                    'rsi': {
+                        'default': {
+                            'period': 14,
+                            'overbought': 70,
+                            'oversold': 30,
+                            'weight': 1.0
+                        },
+                        'constraints': {
+                            'period': {'min': 2, 'max': 50},
+                            'overbought': {'min': 50, 'max': 100},
+                            'oversold': {'min': 0, 'max': 50},
+                            'weight': {'min': 0.1, 'max': 5.0}
+                        }
+                    },
+                    'moving_average': {
+                        'default': {
+                            'short_period': 9,
+                            'long_period': 21,
+                            'weight': 1.0
+                        },
+                        'constraints': {
+                            'short_period': {'min': 2, 'max': 50},
+                            'long_period': {'min': 5, 'max': 200},
+                            'weight': {'min': 0.1, 'max': 5.0}
+                        }
+                    },
+                    'macd': {
+                        'default': {
+                            'fast_period': 12,
+                            'slow_period': 26,
+                            'signal_period': 9,
+                            'weight': 1.0
+                        },
+                        'constraints': {
+                            'fast_period': {'min': 2, 'max': 50},
+                            'slow_period': {'min': 5, 'max': 100},
+                            'signal_period': {'min': 2, 'max': 50},
+                            'weight': {'min': 0.1, 'max': 5.0}
+                        }
+                    },
+                    'bollinger': {
+                        'default': {
+                            'period': 20,
+                            'std_dev': 2,
+                            'weight': 1.0
+                        },
+                        'constraints': {
+                            'period': {'min': 5, 'max': 50},
+                            'std_dev': {'min': 1, 'max': 4},
+                            'weight': {'min': 0.1, 'max': 5.0}
+                        }
+                    },
+                    'stochastic': {
+                        'default': {
+                            'k_period': 14,
+                            'd_period': 3,
+                            'smooth_k': 3,
+                            'overbought': 80,
+                            'oversold': 20,
+                            'weight': 1.0
+                        },
+                        'constraints': {
+                            'k_period': {'min': 5, 'max': 50},
+                            'd_period': {'min': 2, 'max': 10},
+                            'smooth_k': {'min': 1, 'max': 10},
+                            'overbought': {'min': 50, 'max': 100},
+                            'oversold': {'min': 0, 'max': 50},
+                            'weight': {'min': 0.1, 'max': 5.0}
+                        }
+                    },
+                    'atr': {
+                        'default': {
+                            'period': 14,
+                            'multiplier': 2.0,
+                            'weight': 1.0
+                        },
+                        'constraints': {
+                            'period': {'min': 5, 'max': 50},
+                            'multiplier': {'min': 0.5, 'max': 5.0},
+                            'weight': {'min': 0.1, 'max': 5.0}
+                        }
                     }
                 }
             }

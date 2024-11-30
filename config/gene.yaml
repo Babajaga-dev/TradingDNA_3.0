@@ -1,173 +1,122 @@
 gene:
   base:
-    crossover_rate: 0.7
     mutation_rate: 0.1
-    test_period_days: 30
+    crossover_rate: 0.7
     weight: 1.0
-  bollinger:
+    test_period_days: 30
+  
+  rsi:
+    default:
+      period: 14
+      overbought: 70
+      oversold: 30
+      weight: 1.0
     constraints:
       period:
+        min: 2
         max: 50
-        min: 5
-      std_dev:
-        max: 4
-        min: 1
-      touch_percentage:
-        max: 1.0
-        min: 0.1
-    default:
-      period: 20
-      std_dev: 2
-      touch_percentage: 0.5
-  macd:
-    constraints:
-      fast_period:
-        max: 50
-        min: 5
-      slow_period:
+      overbought:
+        min: 50
         max: 100
-        min: 10
-      signal_period:
-        max: 30
-        min: 3
-      divergence:
-        max: 0.1
-        min: 0.01
+      oversold:
+        min: 0
+        max: 50
+      weight:
+        min: 0.1
+        max: 5.0
+  
+  moving_average:
+    default:
+      short_period: 9
+      long_period: 21
+      weight: 1.0
+    constraints:
+      short_period:
+        min: 2
+        max: 50
+      long_period:
+        min: 5
+        max: 200
+      weight:
+        min: 0.1
+        max: 5.0
+  
+  macd:
     default:
       fast_period: 12
       slow_period: 26
       signal_period: 9
-      divergence: 0.02
-  moving_average:
+      weight: 1.0
     constraints:
-      distance:
-        max: 0.1
-        min: 0.01
-      period:
-        max: 200
-        min: 5
-      type:
-        types:
-        - SMA
-        - EMA
-    default:
-      distance: 0.02
-      period: 20
-      type: SMA
-  rsi:
-    constraints:
-      overbought:
-        max: 90
-        min: 50
-      oversold:
-        max: 50
-        min: 10
-      period:
-        max: 50
+      fast_period:
         min: 2
-    default:
-      overbought: 50
-      oversold: 10
-      period: 10
-  stochastic:
-    constraints:
-      k_period:
         max: 50
+      slow_period:
         min: 5
-      d_period:
-        max: 20
-        min: 3
-      overbought:
-        max: 90
-        min: 60
-      oversold:
-        max: 40
-        min: 10
+        max: 100
+      signal_period:
+        min: 2
+        max: 50
+      weight:
+        min: 0.1
+        max: 5.0
+  
+  bollinger:
+    default:
+      period: 20
+      std_dev: 2
+      weight: 1.0
+    constraints:
+      period:
+        min: 5
+        max: 50
+      std_dev:
+        min: 1
+        max: 4
+      weight:
+        min: 0.1
+        max: 5.0
+  
+  stochastic:
     default:
       k_period: 14
       d_period: 3
+      smooth_k: 3
       overbought: 80
       oversold: 20
-  atr:
+      weight: 1.0
     constraints:
-      period:
-        max: 50
+      k_period:
         min: 5
-      multiplier:
-        max: 3.0
-        min: 0.5
+        max: 50
+      d_period:
+        min: 2
+        max: 10
+      smooth_k:
+        min: 1
+        max: 10
+      overbought:
+        min: 50
+        max: 100
+      oversold:
+        min: 0
+        max: 50
+      weight:
+        min: 0.1
+        max: 5.0
+  
+  atr:
     default:
       period: 14
-      multiplier: 1.0
-  volume:
+      multiplier: 2.0
+      weight: 1.0
     constraints:
       period:
-        max: 50
         min: 5
-      threshold:
-        max: 3.0
-        min: 1.2
-      min_price_change:
-        max: 0.05
-        min: 0.001
-    default:
-      period: 20
-      threshold: 1.5
-      min_price_change: 0.005
-  obv:
-    constraints:
-      period:
         max: 50
-        min: 5
-      threshold:
-        max: 0.1
-        min: 0.01
-    default:
-      period: 20
-      threshold: 0.03
-  volatility_breakout:
-    constraints:
-      period:
-        max: 50
-        min: 5
       multiplier:
-        max: 3.0
         min: 0.5
-      breakout_threshold:
-        max: 0.05
-        min: 0.001
-      consolidation_periods:
-        max: 20
-        min: 3
-    default:
-      period: 20
-      multiplier: 1.5
-      breakout_threshold: 0.01
-      consolidation_periods: 5
-  candlestick:
-    constraints:
-      doji_threshold:
-        max: 0.3
-        min: 0.05
-      shadow_ratio:
-        max: 0.5
+        max: 5.0
+      weight:
         min: 0.1
-      engulfing_size:
-        max: 2.0
-        min: 1.1
-      star_body_size:
-        max: 0.3
-        min: 0.05
-      harami_size:
-        max: 0.8
-        min: 0.2
-      pattern_weight:
-        max: 1.0
-        min: 0.1
-    default:
-      doji_threshold: 0.1
-      shadow_ratio: 0.3
-      engulfing_size: 1.5
-      star_body_size: 0.15
-      harami_size: 0.5
-      pattern_weight: 0.5
+        max: 5.0

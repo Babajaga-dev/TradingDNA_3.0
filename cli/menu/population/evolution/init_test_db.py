@@ -12,10 +12,15 @@ import numpy as np
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
+import psycopg2
+from psycopg2 import errors
 from data.database.session_manager import DBSessionManager
 from data.database.models.models import (
     initialize_database, reset_database, MarketData,
     Exchange, Symbol
+)
+from data.database.models.population_models import (
+    Population, Chromosome, ChromosomeGene
 )
 from cli.logger.log_manager import get_logger
 
@@ -28,15 +33,15 @@ RETRY_DELAY = 1.0
 MAX_BACKOFF = 5.0
 
 def retry_on_db_lock(func):
-    """Decorator per gestire i database lock con retry e backoff esponenziale."""
+    """Decorator per gestire i lock del database con retry e backoff esponenziale."""
     def wrapper(*args, **kwargs):
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
                 print(f"[DEBUG] Tentativo {attempt+1}/{MAX_RETRIES} di esecuzione {func.__name__}")
                 return func(*args, **kwargs)
-            except OperationalError as e:
-                if "database is locked" in str(e):
+            except (psycopg2.OperationalError, OperationalError) as e:
+                if any(err in str(e).lower() for err in ["deadlock", "lock", "timeout"]):
                     last_error = e
                     delay = min(RETRY_DELAY * (2 ** attempt) + random.random(), MAX_BACKOFF)
                     print(f"[DEBUG] Database LOCKED in {func.__name__}! Retry {attempt+1}/{MAX_RETRIES} dopo {delay:.1f}s")
@@ -95,7 +100,11 @@ class TestDatabaseInitializer:
                 initialize_database()
                 
                 # Verifica che il database sia vuoto e pronto
-                result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+                result = session.execute(text("""
+                    SELECT tablename 
+                    FROM pg_catalog.pg_tables 
+                    WHERE schemaname = 'public'
+                """))
                 tables = result.fetchall()
                 
                 if not tables:
@@ -124,6 +133,26 @@ class TestDatabaseInitializer:
                 print("[DEBUG] Generazione dati di mercato di test...")
                 self._generate_test_data(exchange.id, symbol.id, session)
                 
+                # Crea popolazione di test
+                print("[DEBUG] Creazione popolazione di test...")
+                population = Population(
+                    name='Test Population',
+                    max_size=100,
+                    symbol_id=symbol.id,
+                    timeframe=self.test_config['test_timeframe'],
+                    mutation_rate=0.01,
+                    selection_pressure=5,
+                    generation_interval=4,
+                    diversity_threshold=0.7,
+                    status='active'
+                )
+                session.add(population)
+                session.flush()
+                
+                # Crea cromosomi di test
+                print("[DEBUG] Creazione cromosomi di test...")
+                self._create_test_chromosomes(population, session)
+                
                 # Commit finale
                 print("[DEBUG] Commit finale...")
                 session.commit()
@@ -137,6 +166,67 @@ class TestDatabaseInitializer:
             print(f"[DEBUG] {error_msg}")
             logger.error(error_msg)
             return error_msg
+            
+    def _create_test_chromosomes(self, population: Population, session) -> None:
+        """
+        Crea cromosomi di test per la popolazione.
+        
+        Args:
+            population: Popolazione di test
+            session: Sessione database attiva
+        """
+        try:
+            print("[DEBUG] Creazione cromosomi di test...")
+            
+            # Carica configurazione geni
+            with open('config/gene.yaml', 'r') as f:
+                gene_config = yaml.safe_load(f)['gene']
+            
+            # Lista dei tipi di geni disponibili
+            gene_types = ['rsi', 'macd', 'moving_average', 'bollinger', 'stochastic', 'atr']
+            
+            # Crea cromosomi
+            for i in range(population.max_size):
+                chromosome = Chromosome(
+                    population_id=population.population_id,
+                    fingerprint=f"test_chromosome_{i}",
+                    generation=0,
+                    status='active',
+                    performance_metrics={'fitness': 0.0},
+                    weight_distribution={}
+                )
+                session.add(chromosome)
+                session.flush()
+                
+                # Aggiungi 2-5 geni casuali a ogni cromosoma
+                num_genes = random.randint(2, 5)
+                selected_genes = random.sample(gene_types, num_genes)
+                
+                for gene_type in selected_genes:
+                    # Ottieni parametri di default dal config
+                    default_params = gene_config[gene_type]['default']
+                    constraints = gene_config[gene_type]['constraints']
+                    
+                    gene = ChromosomeGene(
+                        chromosome_id=chromosome.chromosome_id,
+                        gene_type=gene_type,
+                        parameters=default_params,
+                        weight=random.uniform(0.1, 5.0),
+                        is_active=True,
+                        validation_rules=constraints
+                    )
+                    session.add(gene)
+                
+                if i % 10 == 0:
+                    print(f"[DEBUG] Creati {i+1}/{population.max_size} cromosomi")
+                    session.flush()
+            
+            print("[DEBUG] Cromosomi di test creati con successo")
+            
+        except Exception as e:
+            print(f"[DEBUG] ERRORE creazione cromosomi test: {str(e)}")
+            logger.error(f"Errore creazione cromosomi test: {str(e)}")
+            raise
     
     def _generate_test_data(self, exchange_id: int, symbol_id: int, session) -> None:
         """
@@ -234,7 +324,12 @@ class TestDatabaseInitializer:
             session: Sessione database attiva
         """
         try:
-            session.bulk_save_objects(candles)
+            # Usa il bulk insert ottimizzato di PostgreSQL
+            session.bulk_save_objects(
+                candles,
+                update_changed_only=True,
+                preserve_order=False
+            )
             session.flush()
         except Exception as e:
             print(f"[DEBUG] ERRORE inserimento batch candele: {str(e)}")

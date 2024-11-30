@@ -17,7 +17,6 @@ import time
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..database.session_manager import DBSessionManager
 from ..database.models import (
@@ -293,16 +292,27 @@ class DataDownloader:
                         'is_valid': True
                     }
                     
-                    # Crea la query UPSERT
-                    stmt = sqlite_insert(MarketData).values(data)
+                    # Crea la query UPSERT per PostgreSQL
+                    stmt = text("""
+                        INSERT INTO market_data (
+                            exchange_id, symbol_id, timeframe, timestamp,
+                            open, high, low, close, volume, updated_at, is_valid
+                        ) VALUES (
+                            :exchange_id, :symbol_id, :timeframe, :timestamp,
+                            :open, :high, :low, :close, :volume, :updated_at, :is_valid
+                        )
+                        ON CONFLICT (exchange_id, symbol_id, timeframe, timestamp)
+                        DO UPDATE SET
+                            open = EXCLUDED.open,
+                            high = EXCLUDED.high,
+                            low = EXCLUDED.low,
+                            close = EXCLUDED.close,
+                            volume = EXCLUDED.volume,
+                            updated_at = EXCLUDED.updated_at,
+                            is_valid = EXCLUDED.is_valid
+                    """)
                     
-                    # Definisce l'azione ON CONFLICT
-                    stmt = stmt.on_conflict_do_update(
-                        index_elements=['exchange_id', 'symbol_id', 'timeframe', 'timestamp'],
-                        set_=data
-                    )
-                    
-                    session.execute(stmt)
+                    session.execute(stmt, data)
             
         except Exception as e:
             self.logger.error(f"Errore salvataggio dati: {str(e)}")

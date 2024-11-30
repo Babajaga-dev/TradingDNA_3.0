@@ -41,15 +41,19 @@ from cli.config import (
 from cli.menu.download_manager import DownloadManager
 from cli.menu.population.population_menu import PopulationMenuManager
 from data.database.models import (
-    get_session, Symbol, MarketData, Exchange,
+    Symbol, MarketData, Exchange,
     initialize_gene_parameters, check_gene_parameters_exist
 )
+from data.database.session_manager import DBSessionManager
 
 # Configura il logger usando get_logger
 logger = get_logger(__name__)
 
 # Abilita il supporto per asyncio nidificato
 nest_asyncio.apply()
+
+# Inizializza il session manager
+db = DBSessionManager()
 
 def simulate_loading(duration: float = 2.0) -> None:
     """Simula un caricamento per testing."""
