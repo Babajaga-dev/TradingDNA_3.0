@@ -56,9 +56,23 @@ class TradingSimulator:
             trades_count = {'long': 0, 'short': 0}
             current_pnl = 0.0
             
-            # Log iniziale
-            self.logger.debug(f"Inizio simulazione con {len(market_data)} candele e {len(signals)} segnali")
-            self.logger.debug(f"Configurazione: threshold={signal_threshold}, SL={stop_loss_pct*100}%, TP={take_profit_pct*100}%")
+            # Log configurazione iniziale
+            self.logger.debug(f"Configurazione trading:")
+            self.logger.debug(f"- Signal threshold: ±{signal_threshold}")
+            self.logger.debug(f"- Stop Loss: {stop_loss_pct*100:.1f}%")
+            self.logger.debug(f"- Take Profit: {take_profit_pct*100:.1f}%")
+            self.logger.debug(f"- Trailing Stop: {trailing_stop_pct*100:.1f}%")
+            self.logger.debug(f"- Position Size: {max_position_size*100:.1f}%")
+            self.logger.debug(f"- Commissioni: {commission*100:.2f}%")
+            self.logger.debug(f"- Slippage: {slippage*100:.2f}%")
+            
+            # Log dati iniziali
+            self.logger.debug(f"Dati di mercato: {len(market_data)} candele")
+            self.logger.debug(f"Segnali: {len(signals)} timestamps")
+            
+            # Conta segnali significativi
+            strong_signals = len([s for s in signals.values() if abs(s) > signal_threshold])
+            self.logger.debug(f"Segnali significativi (>{signal_threshold}): {strong_signals}")
             
             for i, data in enumerate(market_data):
                 timestamp = data['timestamp'] if isinstance(data, dict) else data.timestamp
@@ -70,7 +84,7 @@ class TradingSimulator:
                 
                 # Log segnali significativi
                 if abs(signal) > signal_threshold:
-                    self.logger.debug(f"Segnale significativo: {signal:.3f} a {timestamp}")
+                    self.logger.debug(f"Segnale forte: {signal:.3f} a {timestamp} (prezzo={close:.2f})")
                 
                 # Aggiorna trailing stop se posizione aperta
                 if position:
@@ -105,7 +119,13 @@ class TradingSimulator:
                         equity *= (1 + pnl * max_position_size)
                         max_equity = max(max_equity, equity)
                         
-                        self.logger.debug(f"Chiusura long per {close_reason}: entry={entry_price:.2f}, exit={exit_price:.2f}, pnl={pnl*100:.2f}%")
+                        self.logger.debug(
+                            f"Chiusura LONG: {close_reason}\n"
+                            f"- Entry: {entry_price:.2f}\n"
+                            f"- Exit: {exit_price:.2f}\n"
+                            f"- PnL: {pnl*100:.2f}%\n"
+                            f"- Equity: {equity:.2f}"
+                        )
                         
                         performance.append({
                             'timestamp': timestamp,
@@ -136,7 +156,13 @@ class TradingSimulator:
                         equity *= (1 + pnl * max_position_size)
                         max_equity = max(max_equity, equity)
                         
-                        self.logger.debug(f"Chiusura short per {close_reason}: entry={entry_price:.2f}, exit={exit_price:.2f}, pnl={pnl*100:.2f}%")
+                        self.logger.debug(
+                            f"Chiusura SHORT: {close_reason}\n"
+                            f"- Entry: {entry_price:.2f}\n"
+                            f"- Exit: {exit_price:.2f}\n"
+                            f"- PnL: {pnl*100:.2f}%\n"
+                            f"- Equity: {equity:.2f}"
+                        )
                         
                         performance.append({
                             'timestamp': timestamp,
@@ -158,7 +184,13 @@ class TradingSimulator:
                         take_profit = entry_price * (1 + take_profit_pct)
                         trailing_stop = stop_loss
                         trades_count['long'] += 1
-                        self.logger.debug(f"Apertura long: prezzo={entry_price:.2f}, sl={stop_loss:.2f}, tp={take_profit:.2f}")
+                        self.logger.debug(
+                            f"Apertura LONG:\n"
+                            f"- Prezzo: {entry_price:.2f}\n"
+                            f"- Stop Loss: {stop_loss:.2f}\n"
+                            f"- Take Profit: {take_profit:.2f}\n"
+                            f"- Segnale: {signal:.3f}"
+                        )
                         
                     elif signal < -signal_threshold:
                         # Applica commissioni e slippage per entry
@@ -168,7 +200,13 @@ class TradingSimulator:
                         take_profit = entry_price * (1 - take_profit_pct)
                         trailing_stop = stop_loss
                         trades_count['short'] += 1
-                        self.logger.debug(f"Apertura short: prezzo={entry_price:.2f}, sl={stop_loss:.2f}, tp={take_profit:.2f}")
+                        self.logger.debug(
+                            f"Apertura SHORT:\n"
+                            f"- Prezzo: {entry_price:.2f}\n"
+                            f"- Stop Loss: {stop_loss:.2f}\n"
+                            f"- Take Profit: {take_profit:.2f}\n"
+                            f"- Segnale: {signal:.3f}"
+                        )
             
             # Chiudi posizione aperta alla fine del periodo
             if position:
@@ -179,7 +217,13 @@ class TradingSimulator:
                 equity *= (1 + pnl * max_position_size)
                 max_equity = max(max_equity, equity)
                 
-                self.logger.debug(f"Chiusura {position} a fine periodo: entry={entry_price:.2f}, exit={exit_price:.2f}, pnl={pnl*100:.2f}%")
+                self.logger.debug(
+                    f"Chiusura {position.upper()} a fine periodo:\n"
+                    f"- Entry: {entry_price:.2f}\n"
+                    f"- Exit: {exit_price:.2f}\n"
+                    f"- PnL: {pnl*100:.2f}%\n"
+                    f"- Equity: {equity:.2f}"
+                )
                 
                 performance.append({
                     'timestamp': timestamp,
@@ -197,9 +241,18 @@ class TradingSimulator:
                 win_rate = win_trades / total_trades
                 avg_win = sum(t['pnl'] for t in performance if t['pnl'] > 0) / win_trades if win_trades > 0 else 0
                 avg_loss = sum(t['pnl'] for t in performance if t['pnl'] <= 0) / (total_trades - win_trades) if (total_trades - win_trades) > 0 else 0
+                max_drawdown = (max_equity - equity) / max_equity if max_equity > 0 else 0
                 
-                self.logger.debug(f"Performance finale: trades={total_trades}, win_rate={win_rate*100:.1f}%, "
-                           f"avg_win={avg_win*100:.1f}%, avg_loss={avg_loss*100:.1f}%")
+                self.logger.debug(
+                    f"\nStatistiche Trading:\n"
+                    f"- Trades Totali: {total_trades}\n"
+                    f"- Win Rate: {win_rate*100:.1f}%\n"
+                    f"- Avg Win: {avg_win*100:.1f}%\n"
+                    f"- Avg Loss: {avg_loss*100:.1f}%\n"
+                    f"- Max Drawdown: {max_drawdown*100:.1f}%\n"
+                    f"- Equity Finale: {equity:.2f}\n"
+                    f"- Long/Short: {trades_count['long']}/{trades_count['short']}"
+                )
                 
                 performance.append({
                     'summary': {
@@ -208,7 +261,7 @@ class TradingSimulator:
                         'avg_win': avg_win,
                         'avg_loss': avg_loss,
                         'final_equity': equity,
-                        'max_drawdown': (max_equity - equity) / max_equity if max_equity > 0 else 0,
+                        'max_drawdown': max_drawdown,
                         'trades_distribution': trades_count
                     }
                 })

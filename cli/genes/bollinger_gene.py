@@ -32,6 +32,9 @@ class BollingerGene(Gene):
             Tuple con (middle_band, upper_band, lower_band)
         """
         try:
+            # Assicura che data sia un array 1D
+            data = np.asarray(data).flatten()
+            
             period = int(float(self.params['period']))
             std_dev = float(self.params['std_dev'])
             
@@ -42,11 +45,9 @@ class BollingerGene(Gene):
                 return np.full_like(data, np.nan), np.full_like(data, np.nan), np.full_like(data, np.nan)
                 
             # Calcola la media mobile (middle band)
-            weights = np.ones(period)
-            weights /= weights.sum()
             middle_band = np.full_like(data, np.nan)
-            sma = np.convolve(data, weights, mode='valid')
-            middle_band[period-1:] = sma
+            for i in range(period-1, len(data)):
+                middle_band[i] = np.mean(data[i-period+1:i+1])
             
             # Calcola le deviazioni standard
             std = np.full_like(data, np.nan)
@@ -75,33 +76,37 @@ class BollingerGene(Gene):
             Segnale normalizzato tra -1 e 1
         """
         try:
+            # Assicura che data sia un array 1D
+            data = np.asarray(data).flatten()
+            
             self.logger.debug("Calcolo segnale Bollinger Bands")
             period = int(float(self.params['period']))
+            
             if len(data) < period:
                 self.logger.warning("Serie temporale troppo corta per il calcolo del segnale Bollinger")
                 return 0.0
                 
             middle_band, upper_band, lower_band = self.calculate_bands(data)
             
-            if np.isnan(middle_band[-1]):
+            if np.isnan(middle_band[-1]) or np.isnan(upper_band[-1]) or np.isnan(lower_band[-1]):
                 self.logger.warning("Impossibile calcolare il segnale Bollinger: valori NaN")
                 return 0.0
                 
-            last_price = data[-1]
-            band_width = upper_band[-1] - lower_band[-1]
+            last_price = float(data[-1])
+            band_width = float(upper_band[-1] - lower_band[-1])
             
-            if band_width == 0:
-                self.logger.warning("Ampiezza delle bande nulla, impossibile calcolare il segnale")
+            if band_width <= 0:
+                self.logger.warning("Ampiezza delle bande nulla o negativa, impossibile calcolare il segnale")
                 return 0.0
                 
             # Calcola la posizione relativa del prezzo all'interno delle bande
-            position = (last_price - middle_band[-1]) / (band_width / 2)
+            position = (last_price - float(middle_band[-1])) / (band_width / 2)
             
             # Normalizza il segnale
-            signal = np.clip(position, -1, 1)
+            signal = float(np.clip(position, -1, 1))
             
             self.logger.debug(f"Segnale Bollinger calcolato: {signal}")
-            return float(signal)
+            return signal
             
         except Exception as e:
             self.logger.error(f"Errore nel calcolo del segnale Bollinger: {str(e)}")
@@ -118,13 +123,28 @@ class BollingerGene(Gene):
             Punteggio di fitness del gene
         """
         try:
+            # Assicura che data sia un array 1D
+            data = np.asarray(data).flatten()
+            
             self.logger.debug("Inizio valutazione Bollinger Bands")
             period = int(float(self.params['period']))
+            
             if len(data) < period:
                 self.logger.warning("Serie temporale troppo corta per la valutazione Bollinger")
                 return 0.0
                 
             middle_band, upper_band, lower_band = self.calculate_bands(data)
+            
+            # Rimuovi i NaN all'inizio della serie
+            valid_idx = ~np.isnan(middle_band)
+            if not np.any(valid_idx):
+                return 0.0
+                
+            data = data[valid_idx]
+            middle_band = middle_band[valid_idx]
+            upper_band = upper_band[valid_idx]
+            lower_band = lower_band[valid_idx]
+            
             signals = np.zeros_like(data)
             
             # Genera segnali quando il prezzo tocca le bande
@@ -136,6 +156,9 @@ class BollingerGene(Gene):
             # Segnali di acquisto quando il prezzo tocca la banda inferiore
             signals[price_below_lower] = 1
             
+            if len(data) < 2:
+                return 0.0
+                
             # Calcola i rendimenti
             returns = np.diff(data) / data[:-1]
             signal_returns = signals[:-1] * returns

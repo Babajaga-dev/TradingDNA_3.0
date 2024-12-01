@@ -17,8 +17,8 @@ gene:
   rsi:
     default:
       period: 14
-      overbought: 70
-      oversold: 30
+      overbought: 75  # Aumentato per segnali più conservativi
+      oversold: 25    # Diminuito per segnali più conservativi
       weight: 1.0
       risk_factor: 0.5
     constraints:
@@ -42,7 +42,7 @@ gene:
     default:
       period: 20
       type: "SMA"
-      distance: 0.02
+      distance: 0.03  # Aumentato per segnali più significativi
       weight: 1.0
       risk_factor: 0.4
     constraints:
@@ -63,9 +63,9 @@ gene:
   
   macd:
     default:
-      fast_period: 12
-      slow_period: 26
-      signal_period: 9
+      fast_period: 8    # Ridotto per maggiore reattività
+      slow_period: 21   # Ridotto per maggiore reattività
+      signal_period: 5  # Ridotto per maggiore reattività
       weight: 1.0
       risk_factor: 0.6
     constraints:
@@ -88,7 +88,7 @@ gene:
   bollinger:
     default:
       period: 20
-      std_dev: 2
+      std_dev: 2.5    # Aumentato per segnali più conservativi
       weight: 1.0
       risk_factor: 0.7
     constraints:

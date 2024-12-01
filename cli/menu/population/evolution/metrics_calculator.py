@@ -33,6 +33,10 @@ class MetricsCalculator(PopulationBaseManager):
         self.validation_config = evolution_config.get('validation', {})
         self.fitness_weights = evolution_config.get('fitness', {}).get('weights', {})
         
+        # Log configurazione
+        self.logger.debug(f"Configurazione validazione: {self.validation_config}")
+        self.logger.debug(f"Pesi fitness: {self.fitness_weights}")
+        
     def calculate_metrics(self, performance: List[Dict]) -> Dict:
         """Calcola le metriche di performance."""
         try:
@@ -49,6 +53,13 @@ class MetricsCalculator(PopulationBaseManager):
                 self.logger.warning("Nessun trade valido dopo filtro summary")
                 return self._get_empty_metrics()
             
+            # Log dettagli trades
+            self.logger.debug(f"Analisi {len(performance)} trades:")
+            for trade in performance[:5]:  # Log primi 5 trades
+                self.logger.debug(f"Trade: tipo={trade['type']}, pnl={trade['pnl']*100:.2f}%, "
+                           f"entry={trade['entry']:.2f}, exit={trade['exit']:.2f}, "
+                           f"reason={trade['reason']}")
+            
             # Calcola metriche base
             pnls = [trade['pnl'] for trade in performance]
             wins = [pnl for pnl in pnls if pnl > 0]
@@ -57,10 +68,22 @@ class MetricsCalculator(PopulationBaseManager):
             total_trades = len(pnls)
             win_trades = len(wins)
             
+            # Log statistiche trades
+            self.logger.debug(f"Statistiche trades:")
+            self.logger.debug(f"- Totali: {total_trades}")
+            self.logger.debug(f"- Vincenti: {win_trades}")
+            self.logger.debug(f"- Perdenti: {len(losses)}")
+            
             # Calcola win rate e medie
             win_rate = win_trades / total_trades if total_trades > 0 else 0.0
             avg_win = np.mean(wins) if wins else 0.0
             avg_loss = np.mean(losses) if losses else 0.0
+            
+            # Log performance
+            self.logger.debug(f"Performance:")
+            self.logger.debug(f"- Win Rate: {win_rate*100:.1f}%")
+            self.logger.debug(f"- Avg Win: {avg_win*100:.2f}%")
+            self.logger.debug(f"- Avg Loss: {avg_loss*100:.2f}%")
             
             # Calcola Sharpe ratio migliorato
             returns = np.array(pnls)
@@ -76,6 +99,12 @@ class MetricsCalculator(PopulationBaseManager):
             # Calcola profit factor
             profit_factor = (sum(wins) / -sum(losses)) if losses and sum(losses) != 0 else 0.0
             
+            # Log metriche avanzate
+            self.logger.debug(f"Metriche avanzate:")
+            self.logger.debug(f"- Sharpe Ratio: {sharpe_ratio:.2f}")
+            self.logger.debug(f"- Max Drawdown: {max_dd*100:.2f}%")
+            self.logger.debug(f"- Profit Factor: {profit_factor:.2f}")
+            
             # Prepara metriche
             metrics = {
                 'total_return': float(np.sum(pnls)),
@@ -90,10 +119,11 @@ class MetricsCalculator(PopulationBaseManager):
             }
             
             # Log delle metriche principali
-            self.logger.debug(f"Metriche calcolate: trades={metrics['trades']}, "
-                        f"win_rate={metrics['win_rate']*100:.1f}%, "
-                        f"return={metrics['total_return']*100:.1f}%, "
-                        f"sharpe={metrics['sharpe_ratio']:.2f}")
+            self.logger.debug(f"Metriche finali:")
+            self.logger.debug(f"- Trades: {metrics['trades']}")
+            self.logger.debug(f"- Win Rate: {metrics['win_rate']*100:.1f}%")
+            self.logger.debug(f"- Return: {metrics['total_return']*100:.1f}%")
+            self.logger.debug(f"- Sharpe: {metrics['sharpe_ratio']:.2f}")
             
             return metrics
             
@@ -176,27 +206,42 @@ class MetricsCalculator(PopulationBaseManager):
             min_win_rate = self.validation_config.get('min_win_rate', 0.45)
             max_allowed_dd = self.validation_config.get('max_drawdown', 0.20)
             
-            if (metrics['trades'] < min_trades or
-                metrics['win_rate'] < min_win_rate or
-                metrics['max_drawdown'] > max_allowed_dd):
-                self.logger.debug(f"Requisiti minimi non soddisfatti: trades={metrics['trades']}, "
-                           f"win_rate={metrics['win_rate']*100:.1f}%, dd={metrics['max_drawdown']*100:.1f}%")
+            # Log requisiti
+            self.logger.debug(f"Verifica requisiti minimi:")
+            self.logger.debug(f"- Trades: {metrics['trades']} (min={min_trades})")
+            self.logger.debug(f"- Win Rate: {metrics['win_rate']*100:.1f}% (min={min_win_rate*100:.1f}%)")
+            self.logger.debug(f"- Max DD: {metrics['max_drawdown']*100:.1f}% (max={max_allowed_dd*100:.1f}%)")
+            
+            if metrics['trades'] < min_trades:
+                self.logger.debug(f"Trades insufficienti: {metrics['trades']} < {min_trades}")
+                return 0.0
+                
+            if metrics['win_rate'] < min_win_rate:
+                self.logger.debug(f"Win rate insufficiente: {metrics['win_rate']*100:.1f}% < {min_win_rate*100:.1f}%")
+                return 0.0
+                
+            if metrics['max_drawdown'] > max_allowed_dd:
+                self.logger.debug(f"Drawdown eccessivo: {metrics['max_drawdown']*100:.1f}% > {max_allowed_dd*100:.1f}%")
                 return 0.0
             
             # Normalizza e combina usando i pesi da population.yaml
-            fitness = sum(
-                metrics[metric] * weight
-                for metric, weight in self.fitness_weights.items()
-                if metric in metrics
-            )
+            weighted_metrics = {}
+            for metric, weight in self.fitness_weights.items():
+                if metric in metrics:
+                    weighted_metrics[metric] = metrics[metric] * weight
+                    self.logger.debug(f"Metrica {metric}: {metrics[metric]:.4f} * {weight} = {weighted_metrics[metric]:.4f}")
+            
+            fitness = sum(weighted_metrics.values())
             
             # Aggiungi bonus per profit factor > 1
             if metrics['profit_factor'] > 1:
-                fitness *= (1 + (metrics['profit_factor'] - 1) * 0.1)
+                bonus = (metrics['profit_factor'] - 1) * 0.1
+                self.logger.debug(f"Bonus profit factor: {bonus:.4f}")
+                fitness *= (1 + bonus)
             
             fitness = max(0.0, float(fitness))
             
-            self.logger.debug(f"Fitness calcolato: {fitness:.4f}")
+            self.logger.debug(f"Fitness finale: {fitness:.4f}")
             return fitness
             
         except Exception as e:

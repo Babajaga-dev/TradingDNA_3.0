@@ -57,6 +57,7 @@ class MarketDataManager(PopulationBaseManager):
         self._market_data_cache = {}
         self._cache_timestamp = datetime.now()
         self._cache_timeout = timedelta(minutes=5)
+        logger.debug(f"Inizializzato con configurazione test: {test_config}")
         
     @retry_on_db_lock
     def get_market_data(self, population: Population, session: Optional[Session] = None) -> List[MarketData]:
@@ -70,10 +71,12 @@ class MarketDataManager(PopulationBaseManager):
             )
             
             if cache_valid:
+                logger.debug(f"Usando dati dalla cache per {cache_key}")
                 return self._market_data_cache[cache_key]
                 
             # Ottieni ultimi N giorni di dati
-            days = self.test_config['test_days']  # Corretto il riferimento alla configurazione
+            days = self.test_config['test_days']
+            logger.debug(f"Caricamento {days} giorni di dati per {population.symbol_id} {population.timeframe}")
             
             if session is None:
                 with self.session_scope() as session:
@@ -93,6 +96,8 @@ class MarketDataManager(PopulationBaseManager):
         candles_per_day = self._get_candles_per_day(population.timeframe)
         total_candles = days * candles_per_day
         
+        logger.debug(f"Richieste {total_candles} candele ({candles_per_day} candele/giorno)")
+        
         data = session.query(MarketData)\
             .filter(
                 MarketData.symbol_id == population.symbol_id,
@@ -103,6 +108,19 @@ class MarketDataManager(PopulationBaseManager):
             .all()
             
         query_time = time.time() - start_time
+        
+        if data:
+            logger.debug(f"Caricati {len(data)} record in {query_time:.2f}s")
+            # Log dei primi e ultimi timestamp per debug
+            if len(data) > 0:
+                first_ts = min(d.timestamp for d in data)
+                last_ts = max(d.timestamp for d in data)
+                logger.debug(f"Range dati: da {first_ts} a {last_ts}")
+                # Log statistiche prezzi
+                closes = [d.close for d in data]
+                logger.debug(f"Range prezzi: min={min(closes):.2f}, max={max(closes):.2f}, avg={sum(closes)/len(closes):.2f}")
+        else:
+            logger.warning("Nessun dato trovato nel database")
             
         # Verifica timeout manuale
         if query_time > QUERY_TIMEOUT:
@@ -119,20 +137,43 @@ class MarketDataManager(PopulationBaseManager):
             
     def create_test_market_data(self, days: int) -> List[Dict]:
         """Crea dati di mercato di test."""
+        logger.debug(f"Creazione {days} giorni di dati di test")
         data = []
         base_price = 100.0
         timestamp = datetime.now()
         
+        # Parametri per simulare trend e volatilità
+        trend = np.random.choice([-1, 1]) * 0.001  # Trend giornaliero ±0.1%
+        volatility = 0.01  # 1% di volatilità
+        
         for i in range(days * 24):
-            price = base_price * (1 + np.random.normal(0, 0.01))
+            # Aggiungi componente di trend
+            base_price *= (1 + trend)
+            
+            # Genera prezzo con random walk
+            price = base_price * (1 + np.random.normal(0, volatility))
+            
+            # Genera OHLC realistici
+            high_low_spread = abs(np.random.normal(0, volatility))
+            open_price = price * (1 + np.random.normal(0, volatility/2))
+            high_price = max(price, open_price) * (1 + high_low_spread)
+            low_price = min(price, open_price) * (1 - high_low_spread)
+            
             data.append({
                 'timestamp': timestamp - timedelta(hours=i),
-                'open': price * (1 - 0.001),
-                'high': price * (1 + 0.001),
-                'low': price * (1 - 0.002),
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
                 'close': price,
                 'volume': np.random.randint(1000, 10000)
             })
+
+        if data:
+            closes = [d['close'] for d in data]
+            logger.debug(f"Dati test creati: {len(data)} candele")
+            logger.debug(f"Range prezzi test: min={min(closes):.2f}, max={max(closes):.2f}, avg={sum(closes)/len(closes):.2f}")
+            logger.debug(f"Primo timestamp: {data[-1]['timestamp']}")
+            logger.debug(f"Ultimo timestamp: {data[0]['timestamp']}")
 
         return data
 
@@ -147,4 +188,8 @@ class MarketDataManager(PopulationBaseManager):
             '1d': 1440
         }
         minutes_per_day = 24 * 60
-        return minutes_per_day // timeframe_minutes[timeframe]
+        tf_min = timeframe_minutes.get(timeframe)
+        if not tf_min:
+            logger.error(f"Timeframe non valido: {timeframe}")
+            return 0
+        return minutes_per_day // tf_min

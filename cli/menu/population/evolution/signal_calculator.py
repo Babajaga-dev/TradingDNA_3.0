@@ -128,6 +128,7 @@ class SignalCalculator(PopulationBaseManager):
                 'volume': np.array(volumes, dtype=float)
             }
             
+            self.logger.debug(f"Dati di mercato preparati: {len(closes)} candele")
             return ohlcv_data, timestamps
             
         except Exception as e:
@@ -159,6 +160,7 @@ class SignalCalculator(PopulationBaseManager):
                 self.logger.error(f"Parametri mancanti per {gene.gene_type}: {params}")
                 return None
                 
+            self.logger.debug(f"Creato gene {gene.gene_type} con parametri: {params}")
             return gene_class(gene.gene_type, params)
             
         except Exception as e:
@@ -211,6 +213,8 @@ class SignalCalculator(PopulationBaseManager):
                 self.logger.error("Nessun gene attivo trovato")
                 return {}
 
+            self.logger.debug(f"Calcolo segnali per {len(active_genes)} geni attivi")
+
             # Inizializza segnali per tutti i timestamp
             for ts in timestamps:
                 signals[ts] = 0.0
@@ -221,9 +225,13 @@ class SignalCalculator(PopulationBaseManager):
                 self.logger.error("Peso totale dei geni è 0")
                 return {}
 
+            self.logger.debug(f"Peso totale geni: {total_weight}")
+
             # Processa i geni in batch
             for i in range(0, len(active_genes), self.GENE_BATCH_SIZE):
                 batch = active_genes[i:i + self.GENE_BATCH_SIZE]
+                self.logger.debug(f"Processing batch {(i//self.GENE_BATCH_SIZE)+1}, geni {i+1}-{min(i+self.GENE_BATCH_SIZE, len(active_genes))}")
+                
                 batch_signals = self._calculate_batch_signals(batch, ohlcv_data, timestamps, total_weight)
                 
                 # Combina i segnali normalizzati
@@ -244,6 +252,9 @@ class SignalCalculator(PopulationBaseManager):
             if non_zero_signals:
                 self.logger.debug(f"Segnali generati (>0.1): {len(non_zero_signals)}")
                 self.logger.debug(f"Range segnali: min={min(signals.values()):.2f}, max={max(signals.values()):.2f}")
+                # Log dei primi 5 segnali non zero per debug
+                first_five = list(non_zero_signals.items())[:5]
+                self.logger.debug(f"Primi 5 segnali non zero: {first_five}")
 
             return signals
             
@@ -287,6 +298,11 @@ class SignalCalculator(PopulationBaseManager):
                     # Normalizza e applica peso
                     normalized_weight = gene.weight / total_weight
                     weighted_signals = raw_signals * normalized_weight
+                    
+                    # Log dei segnali del gene
+                    non_zero = np.count_nonzero(np.abs(weighted_signals) > 0.1)
+                    if non_zero > 0:
+                        self.logger.debug(f"Gene {gene.gene_type}: {non_zero} segnali >0.1, range={np.min(weighted_signals):.2f} to {np.max(weighted_signals):.2f}")
                     
                     # Salva segnale per ogni timestamp
                     for i, ts in enumerate(timestamps):
