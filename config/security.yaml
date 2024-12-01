@@ -2,6 +2,15 @@ security:
   backup_interval: 86400
   enable_backup: true
 
+  # Configurazione report
+  report:
+    show_gene_distribution: true
+    show_weight_stats: true
+    show_performance_metrics: true
+    show_generation_progress: true
+    save_report: true
+    report_path: "test_reports/"
+
 database:
   # Configurazione connessione PostgreSQL
   url: "postgresql://postgres:ninja@localhost:5432/tradingdna"

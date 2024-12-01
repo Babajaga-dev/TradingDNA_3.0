@@ -131,6 +131,27 @@ loggers:
     handlers: [console, test_file]
     propagate: no
 
+  # Trading System
+  signal_calculator:
+    level: ERROR
+    handlers: [console, file]
+    propagate: no
+
+  trading_simulator:
+    level: ERROR
+    handlers: [console, file]
+    propagate: no
+
+  metrics_calculator:
+    level: ERROR
+    handlers: [console, file]
+    propagate: no
+
+  market_data_manager:
+    level: ERROR
+    handlers: [console, file]
+    propagate: no
+
   # Data System
   data_downloader:
     level: ERROR

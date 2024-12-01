@@ -11,14 +11,15 @@ from .base import Gene
 class RSIGene(Gene):
     """Gene che implementa l'indicatore RSI."""
     
-    def __init__(self, params: Optional[Dict[str, Any]] = None):
+    def __init__(self, name: str = 'rsi', params: Optional[Dict[str, Any]] = None):
         """
         Inizializza il gene RSI.
         
         Args:
+            name: Nome del gene (default: 'rsi')
             params: Parametri specifici del gene (opzionale)
         """
-        super().__init__('rsi', params)
+        super().__init__(name, params)
         
     def calculate_rsi(self, data: np.ndarray) -> np.ndarray:
         """
@@ -74,22 +75,27 @@ class RSIGene(Gene):
             return rsi
             
         except Exception as e:
-            print(f"Errore nel calcolo RSI: {str(e)}")
+            self.logger.error(f"Errore nel calcolo RSI: {str(e)}")
             return np.full_like(data, np.nan)
         
-    def calculate_signal(self, data: np.ndarray) -> float:
+    def calculate_signal(self, data: Dict[str, np.ndarray]) -> float:
         """
         Calcola il segnale del gene sui dati forniti.
         
         Args:
-            data: Array numpy con i prezzi di chiusura
+            data: Dizionario con array numpy OHLCV
             
         Returns:
             Segnale normalizzato tra -1 e 1
         """
         try:
-            # Assicurati che data sia un array 1D
-            prices = np.asarray(data, dtype=float).flatten()
+            # Estrai i prezzi di chiusura dal dizionario OHLCV
+            if not isinstance(data, dict) or 'close' not in data:
+                raise ValueError("Input deve essere un dizionario con chiave 'close'")
+                
+            prices = data['close']
+            if not isinstance(prices, np.ndarray):
+                raise ValueError("I prezzi devono essere un array numpy")
             
             period = int(self.params['period'])
             if len(prices) < period + 1:
@@ -118,25 +124,31 @@ class RSIGene(Gene):
                 mid_point = (overbought + oversold) / 2.0
                 signal = (mid_point - last_rsi) / (overbought - oversold) * 2.0
                 
+            self.logger.debug(f"RSI={last_rsi:.1f}, Signal={signal:.2f}")
             return float(np.clip(signal, -1.0, 1.0))
             
         except Exception as e:
-            print(f"Errore nel calcolo del segnale: {str(e)}")
+            self.logger.error(f"Errore nel calcolo del segnale RSI: {str(e)}")
             return 0.0
         
-    def evaluate(self, data: np.ndarray) -> float:
+    def evaluate(self, data: Dict[str, np.ndarray]) -> float:
         """
         Valuta le performance del gene sui dati forniti.
         
         Args:
-            data: Array numpy con i prezzi di chiusura
+            data: Dizionario con array numpy OHLCV
             
         Returns:
             Punteggio di fitness del gene
         """
         try:
-            # Assicurati che data sia un array 1D
-            prices = np.asarray(data, dtype=float).flatten()
+            # Estrai i prezzi di chiusura dal dizionario OHLCV
+            if not isinstance(data, dict) or 'close' not in data:
+                raise ValueError("Input deve essere un dizionario con chiave 'close'")
+                
+            prices = data['close']
+            if not isinstance(prices, np.ndarray):
+                raise ValueError("I prezzi devono essere un array numpy")
             
             period = int(self.params['period'])
             if len(prices) < period + 1:
@@ -187,8 +199,10 @@ class RSIGene(Gene):
             frequency_penalty = float(np.exp(-signal_frequency * 10))  # Penalizza alta frequenza
             
             fitness = (win_rate * 0.4 + avg_return * 0.4 + frequency_penalty * 0.2)
+            
+            self.logger.debug(f"RSI Fitness: win_rate={win_rate:.2f}, avg_return={avg_return:.2f}, penalty={frequency_penalty:.2f}")
             return float(fitness)
             
         except Exception as e:
-            print(f"Errore nella valutazione: {str(e)}")
+            self.logger.error(f"Errore nella valutazione RSI: {str(e)}")
             return 0.0

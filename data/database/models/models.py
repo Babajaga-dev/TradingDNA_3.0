@@ -230,7 +230,7 @@ def verify_database_state() -> bool:
                     print(f"Chiave primaria mancante in {table}")
                     return False
             
-            print("Stato del database verificato con successo")
+            #print("Stato del database verificato con successo")
             return True
             
     except Exception as e:

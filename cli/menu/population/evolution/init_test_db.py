@@ -38,10 +38,10 @@ class TestDatabaseInitializer:
     def _load_test_config(self) -> Dict:
         """Carica la configurazione dei test."""
         try:
-            print("[DEBUG] Caricamento configurazione test")
-            with open('config/test.yaml', 'r') as f:
+            
+            with open('config/cromo.yaml', 'r') as f:
                 config = yaml.safe_load(f)
-            print("[DEBUG] Configurazione test caricata")
+            
             return config['evolution_test']
         except Exception as e:
             logger.error(f"Errore caricamento configurazione test: {str(e)}")
@@ -50,20 +50,20 @@ class TestDatabaseInitializer:
     def initialize(self) -> str:
         """Inizializza il database per i test."""
         try:
-            print("[DEBUG] Inizio inizializzazione database test")
+            
             
             # Prima resetta il database
-            print("[DEBUG] Reset database...")
+            
             reset_database()
             
             # Verifica lo stato dopo il reset
-            print("[DEBUG] Verifica stato database...")
+            
             if not verify_database_state():
                 raise Exception("Verifica stato database fallita dopo il reset")
             
             with self.db.session() as session:
                 # Crea exchange e symbol di test
-                print("[DEBUG] Creazione exchange e symbol di test...")
+                
                 exchange = Exchange(
                     name='binance',
                     is_active=True,
@@ -88,19 +88,19 @@ class TestDatabaseInitializer:
                 session.flush()  # Per ottenere l'ID
                 
                 # Genera dati di mercato di test
-                print("[DEBUG] Generazione dati di mercato di test...")
+                
                 self._generate_test_data(exchange.id, symbol.id, session)
                 
                 # Commit finale
-                print("[DEBUG] Commit finale...")
+                
                 session.commit()
                 
                 # Verifica finale
-                print("[DEBUG] Verifica finale...")
+                
                 if not verify_database_state():
                     raise Exception("Verifica finale del database fallita")
                 
-                print("[DEBUG] Database test inizializzato con successo")
+                
                 logger.info("Database test inizializzato con successo")
                 return "Database test inizializzato con successo"
                 
@@ -112,7 +112,7 @@ class TestDatabaseInitializer:
     def _generate_test_data(self, exchange_id: int, symbol_id: int, session) -> None:
         """Genera dati di mercato sintetici per il test."""
         try:
-            print("[DEBUG] Inizio generazione dati di mercato sintetici")
+            
             
             # Parametri generazione
             days = self.test_config['test_days']

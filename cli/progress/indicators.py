@@ -127,17 +127,27 @@ class ProgressBar(ProgressIndicator):
         
     def _calculate_eta(self) -> str:
         """Calcola il tempo stimato rimanente."""
-        if self.current == 0:
+        if self.current == 0 or not self._start_time:
             return "???"
+            
         elapsed = time.time() - self._start_time
-        rate = self.current / elapsed
-        remaining = (self.total - self.current) / rate
-        return self._format_time(remaining)
+        if elapsed <= 0:
+            return "???"
+            
+        try:
+            rate = self.current / elapsed
+            if rate <= 0:
+                return "???"
+                
+            remaining = (self.total - self.current) / rate
+            return self._format_time(remaining)
+        except (ZeroDivisionError, ValueError):
+            return "???"
         
     def _get_progress_bar(self) -> str:
         """Genera la barra di progresso."""
         width = 30
-        filled = int(width * self.current / self.total)
+        filled = int(width * self.current / self.total) if self.total > 0 else 0
         style = self.STYLES.get(self.style, self.STYLES['default'])
         
         if len(style) == 2:  # Per stili come squares
@@ -148,7 +158,7 @@ class ProgressBar(ProgressIndicator):
         text = [f"{self.description} [{bar}]"]
         
         if self.show_percentage:
-            percentage = (self.current / self.total) * 100
+            percentage = (self.current / self.total) * 100 if self.total > 0 else 0
             text.append(f"{percentage:.1f}%")
             
         if self.show_eta and self._start_time:
@@ -167,8 +177,12 @@ class ProgressBar(ProgressIndicator):
         """Aggiorna il display della barra."""
         with Live(auto_refresh=False) as live:
             while self._running:
-                live.update(self._get_progress_bar())
-                live.refresh()
+                try:
+                    live.update(self._get_progress_bar())
+                    live.refresh()
+                except Exception as e:
+                    # Log error but continue
+                    print(f"Errore aggiornamento progress bar: {str(e)}")
                 time.sleep(0.1)
                 
     def update(self, value: int):

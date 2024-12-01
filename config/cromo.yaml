@@ -1,0 +1,27 @@
+# Configurazione test sistema
+
+evolution_test:
+  # Parametri test evoluzione
+  generations:
+    default: 5
+    min: 1
+    max: 50
+  
+  # Dimensione popolazione test
+  population_size:
+    default: 100
+    min: 50
+    max: 200
+    
+  # Parametri evolutivi test
+  mutation_rate: 0.02
+  selection_pressure: 5
+  generation_interval: 1
+  diversity_threshold: 0.7
+  
+  # Timeout test in secondi
+  timeout: 1800  # 30 minuti
+  
+  # Dati test
+  test_timeframe: "1h"    # Timeframe per i dati di test
+  test_days: 30          # Numero di giorni di dati storici da generare

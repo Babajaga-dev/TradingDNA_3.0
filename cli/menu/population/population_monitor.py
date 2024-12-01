@@ -21,7 +21,7 @@ class PopulationMonitor(PopulationBaseManager):
         """Inizializza il monitor."""
         # Chiama il costruttore della classe base
         super().__init__()
-        print("[DEBUG] PopulationMonitor inizializzato")
+        
     
     def list_populations(self) -> str:
         """
@@ -31,11 +31,11 @@ class PopulationMonitor(PopulationBaseManager):
             str: Lista formattata delle popolazioni
         """
         try:
-            print("[DEBUG] Recupero lista popolazioni")
+            
             with self.db.session() as session:
-                print("[DEBUG] Query popolazione iniziata")
+                
                 populations = session.query(Population).all()
-                #####print(f"[DEBUG] Popolazioni trovate: {len(populations)}")
+
                 
                 if not populations:
                     return "Nessuna popolazione trovata"
@@ -45,14 +45,14 @@ class PopulationMonitor(PopulationBaseManager):
                 rows = []
                 
                 for pop in populations:
-                    print(f"[DEBUG] Elaborazione popolazione {pop.population_id}")
-                    #print(f"[DEBUG] Stato popolazione: {pop.status}")
+
+
                     
                     # Calcola statistiche base
                     stats = self._get_basic_stats(pop, session)
-                    print(f"[DEBUG] Statistiche calcolate: {stats}")
+
                     metrics = self._get_evolution_metrics(pop, session)
-                    #print(f"[DEBUG] Metriche evoluzione: {metrics}")
+
                     
                     rows.append([
                         str(pop.population_id),
@@ -63,14 +63,14 @@ class PopulationMonitor(PopulationBaseManager):
                         f"{metrics['best_fitness']:.4f}",
                         self._calculate_age(pop.created_at)
                     ])
-                    #print(f"[DEBUG] Riga aggiunta per popolazione {pop.population_id}")
+
                     
                 # Formatta e restituisci la tabella
                 return print_table(headers, rows)
             
         except Exception as e:
             logger.error(f"Errore lista popolazioni: {str(e)}")
-            #print(f"[DEBUG] Errore dettagliato in list_populations: {str(e)}, tipo: {type(e)}")
+
             return f"Errore: {str(e)}"
     
     def get_population_status(self, population_id: int) -> Dict:
@@ -204,7 +204,7 @@ class PopulationMonitor(PopulationBaseManager):
         }
         
         try:
-            #print(f"[DEBUG] Inizio calcolo statistiche per popolazione {population.population_id}")
+
             # Query diretta per conteggi
             counts = session.query(
                 Chromosome.status,
@@ -215,10 +215,10 @@ class PopulationMonitor(PopulationBaseManager):
                 Chromosome.status
             ).all()
             
-            #print(f"[DEBUG] Conteggi ottenuti: {counts}")
+
             
             for status, count in counts:
-                #print(f"[DEBUG] Elaborazione stato: {status} ({type(status)}), conteggio: {count}")
+
                 status_str = str(status)
                 
                 if status_str == "active":
@@ -230,11 +230,11 @@ class PopulationMonitor(PopulationBaseManager):
                 
                 stats["total"] += count
                 
-            #print(f"[DEBUG] Statistiche finali: {stats}")
+
                 
         except Exception as e:
             logger.error(f"Errore nel calcolo delle statistiche di base: {str(e)}")
-            #print(f"[DEBUG] Errore dettagliato in _get_basic_stats: {str(e)}, tipo: {type(e)}")
+
             
         return stats
         

@@ -34,10 +34,10 @@ class PopulationBaseManager:
     
     def __init__(self):
         """Inizializza il population manager."""
-        print("[DEBUG] Inizializzazione PopulationBaseManager")
+        
         self.db = DBSessionManager()
         self.config = self._load_configs()
-        print("[DEBUG] PopulationBaseManager inizializzato")
+        
         
     @contextmanager
     def session_scope(self):
@@ -45,10 +45,10 @@ class PopulationBaseManager:
         Context manager per la gestione delle sessioni.
         Usa il DBSessionManager centralizzato.
         """
-        print("[DEBUG] Apertura nuova sessione database")
+        
         with self.db.session() as session:
             yield session
-            print("[DEBUG] Chiusura sessione database")
+            
             
     def get_population(self, population_id: int, session: Optional[Session] = None) -> Optional[Population]:
         """
@@ -62,26 +62,26 @@ class PopulationBaseManager:
             Optional[Population]: Popolazione trovata o None
         """
         try:
-            #print(f"[DEBUG] Recupero popolazione {population_id}")
+
             if session is not None:
-                print("[DEBUG] Uso sessione esistente")
+                
                 population = session.get(Population, population_id)
                 if not population:
-                    #print(f"[DEBUG] Popolazione {population_id} non trovata")
+
                     return None
-                #print(f"[DEBUG] Popolazione {population_id} recuperata")
+
                 return population
             else:
-                print("[DEBUG] Creazione nuova sessione")
+                
                 with self.session_scope() as session:
                     population = session.get(Population, population_id)
                     if not population:
-                        #print(f"[DEBUG] Popolazione {population_id} non trovata")
+
                         return None
-                    #print(f"[DEBUG] Merge popolazione {population_id}")
+
                     return session.merge(population)
         except Exception as e:
-            #print(f"[DEBUG] ERRORE recupero popolazione {population_id}: {str(e)}")
+
             logger.error(f"Errore recupero popolazione {population_id}: {str(e)}")
             return None
             
@@ -97,15 +97,15 @@ class PopulationBaseManager:
             T: Oggetto mergeto
         """
         if obj is None:
-            print("[DEBUG] Oggetto da mergere è None")
+            
             return None
             
-        print("[DEBUG] Inizio operazione safe_merge")
-        #print(f"[DEBUG] Tipo oggetto: {type(obj).__name__}")
+        
+
         
         # Se non viene fornita una sessione, usa quella corrente o creane una nuova
         if session is None:
-            print("[DEBUG] Nessuna sessione fornita, uso sessione corrente")
+            
             session = self.db._session_maker()
         
         retries = 0
@@ -114,11 +114,11 @@ class PopulationBaseManager:
         
         while retries < MAX_RETRIES:
             try:
-                #print(f"[DEBUG] Tentativo merge {retries + 1}/{MAX_RETRIES}")
+
                 
                 # Verifica se l'oggetto è già nella sessione
                 if obj in session:
-                    print("[DEBUG] Oggetto già presente nella sessione")
+                    
                     return obj
                 
                 # Esegui il merge con timeout
@@ -126,7 +126,7 @@ class PopulationBaseManager:
                 merged = session.merge(obj)
                 session.flush()  # Forza il flush per verificare eventuali errori
                 merge_time = time.time() - start_time
-                #print(f"[DEBUG] Merge completato in {merge_time:.2f}s")
+
                 return merged
                 
             except OperationalError as e:
@@ -134,18 +134,18 @@ class PopulationBaseManager:
                     last_error = e
                     retries += 1
                     if retries < MAX_RETRIES:
-                        #print(f"[DEBUG] Database locked, retry {retries}/{MAX_RETRIES} dopo {delay:.1f}s")
+
                         time.sleep(delay)
                         delay = min(delay * 2 + random.random(), MAX_RETRY_DELAY)
                         continue
                 raise
                 
             except Exception as e:
-                #print(f"[DEBUG] ERRORE durante merge: {str(e)}")
+
                 logger.error(f"Errore durante merge: {str(e)}")
                 raise
         
-        #print(f"[DEBUG] MAX RETRY raggiunti. Ultimo errore: {str(last_error)}")
+
         logger.error(f"Max retry raggiunti durante merge: {str(last_error)}")
         raise last_error
             
@@ -157,7 +157,7 @@ class PopulationBaseManager:
             Dict: Configurazioni unificate
         """
         try:
-            print("[DEBUG] Caricamento configurazioni")
+            
             config_dir = Path('config')
             
             with open(config_dir / 'population.yaml', 'r') as f:
@@ -180,11 +180,11 @@ class PopulationBaseManager:
                 'gene': gene_config['gene']
             }
             
-            print("[DEBUG] Configurazioni caricate con successo")
+            
             return config
             
         except Exception as e:
-            #print(f"[DEBUG] ERRORE caricamento configurazioni: {str(e)}")
+
             logger.error(f"Errore caricamento configurazioni: {str(e)}")
             raise
           
@@ -196,7 +196,7 @@ class PopulationBaseManager:
             List[Dict]: Lista di popolazioni con informazioni base
         """
         try:
-            print("[DEBUG] Recupero lista popolazioni")
+            
             with self.session_scope() as session:
                 populations = session.query(Population).all()
                 
@@ -214,11 +214,11 @@ class PopulationBaseManager:
                         'Creazione': pop.created_at.strftime(self.config['population']['display']['date_format'])
                     })
                     
-                #print(f"[DEBUG] Recuperate {len(result)} popolazioni")
+
                 return result
                 
         except Exception as e:
-            #print(f"[DEBUG] ERRORE lista popolazioni: {str(e)}")
+
             logger.error(f"Errore lista popolazioni: {str(e)}")
             return []
             
@@ -258,7 +258,7 @@ class PopulationBaseManager:
             return True
             
         except Exception as e:
-            #print(f"[DEBUG] ERRORE validazione parametri: {str(e)}")
+
             logger.error(f"Errore validazione parametri: {str(e)}")
             return False
             

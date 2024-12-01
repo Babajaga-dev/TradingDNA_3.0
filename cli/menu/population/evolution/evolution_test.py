@@ -21,7 +21,8 @@ from data.database.models.population_models import (
 from data.database.models.models import verify_database_state
 from cli.menu.population.population_base import PopulationBaseManager
 from cli.logger.log_manager import get_logger
-from cli.progress.indicators import ProgressBar
+from cli.progress.indicators import get_progress_manager
+from cli.config.config_loader import get_config_loader
 from .evolution_manager import EvolutionManager
 from .selection_manager import SelectionManager
 from .reproduction_manager import ReproductionManager
@@ -44,12 +45,12 @@ class EvolutionTester(PopulationBaseManager):
         self.fitness = FitnessCalculator()
         self.test_config = self._load_test_config()
         self.logger = get_logger('evolution_test')
-        print("[DEBUG] EvolutionTester inizializzato")
+        self.config = get_config_loader()
         
     def _load_test_config(self) -> Dict:
         """Carica la configurazione dei test."""
         try:
-            with open('config/test.yaml', 'r') as f:
+            with open('config/cromo.yaml', 'r') as f:
                 config = yaml.safe_load(f)
             return config['evolution_test']
         except Exception as e:
@@ -190,56 +191,72 @@ class EvolutionTester(PopulationBaseManager):
                 return "Popolazione non trovata"
             
             # Carica dati di mercato
-            print("[DEBUG] Caricamento dati di mercato...")
             market_data = self.fitness.market_data.get_market_data(population, session)
             if not market_data:
-                print("[DEBUG] Creazione dati di test...")
                 market_data = self.fitness.market_data.create_test_market_data(
-                    self.test_config['backtest']['days']
+                    self.test_config['test_days']  # Corretto il riferimento alla configurazione
                 )
-            print("[DEBUG] Dati di mercato caricati")
-            
+
             # Calcola fitness iniziale
             initial_stats = self._calculate_population_stats(population_id, session)
             evolution_stats = []
             
-            # Evolvi per N generazioni
-            for i in range(generations):
-                print(f"\n[DEBUG] === GENERAZIONE {i+1}/{generations} ===")
-                
-                # Esegui evoluzione in una transazione
-                try:
-                    # Selezione e riproduzione
-                    parent_pairs = self.selection.select_parents(population, population.max_size // 2, session)
-                    offspring = self.reproduction.reproduce_batch(parent_pairs, session)
+            # Crea progress bar
+            progress_manager = get_progress_manager()
+            progress_bar = progress_manager.create_progress_bar(
+                name="evolution_test",
+                total=generations,
+                description=f"Test Evoluzione {population.name}",
+                style="blocks",
+                show_percentage=True,
+                show_eta=True
+            )
+            progress_bar.start()
+            
+            try:
+                # Evolvi per N generazioni
+                for i in range(generations):
+                    # Aggiorna progress bar
+                    progress_bar.update(i + 1)
                     
-                    # Mutazione e fitness
-                    mutated = self.mutation.mutate_population(population, offspring, session)
-                    valid_mutated = []
-                    for chromosome in mutated:
-                        if chromosome and chromosome.population_id:
-                            self.fitness._calculate_chromosome_fitness_no_merge(chromosome, market_data, session)
-                            valid_mutated.append(chromosome)
-                    
-                    # Selezione sopravvissuti
-                    survivors = self.selection.select_survivors(population, valid_mutated, session)
-                    
-                    # Aggiorna popolazione
-                    self._update_population_stats(population_id, survivors, session)
-                    
-                    # Calcola statistiche generazione
-                    gen_stats = self._calculate_generation_stats(survivors, session)
-                    evolution_stats.append(gen_stats)
-                    
-                    # Verifica stato dopo ogni generazione
-                    if not verify_database_state():
-                        raise Exception(f"Stato database non valido dopo generazione {i+1}")
-                    
-                    session.commit()
-                    
-                except Exception as e:
-                    session.rollback()
-                    raise
+                    # Esegui evoluzione in una transazione
+                    try:
+                        # Selezione e riproduzione
+                        parent_pairs = self.selection.select_parents(population, population.max_size // 2, session)
+                        offspring = self.reproduction.reproduce_batch(parent_pairs, session)
+                        
+                        # Mutazione e fitness
+                        mutated = self.mutation.mutate_population(population, offspring, session)
+                        valid_mutated = []
+                        for chromosome in mutated:
+                            if chromosome and chromosome.population_id:
+                                self.fitness._calculate_chromosome_fitness_no_merge(chromosome, market_data, session)
+                                valid_mutated.append(chromosome)
+                        
+                        # Selezione sopravvissuti
+                        survivors = self.selection.select_survivors(population, valid_mutated, session)
+                        
+                        # Aggiorna popolazione
+                        self._update_population_stats(population_id, survivors, session)
+                        
+                        # Calcola statistiche generazione
+                        gen_stats = self._calculate_generation_stats(survivors, session)
+                        evolution_stats.append(gen_stats)
+                        
+                        # Verifica stato dopo ogni generazione
+                        if not verify_database_state():
+                            raise Exception(f"Stato database non valido dopo generazione {i+1}")
+                        
+                        session.commit()
+                        
+                    except Exception as e:
+                        session.rollback()
+                        raise
+                        
+            finally:
+                # Ferma e rimuovi progress bar
+                progress_bar.stop()
+                progress_manager.remove_indicator("evolution_test")
             
             # Calcola statistiche finali
             final_stats = self._calculate_population_stats(population_id, session)
@@ -398,11 +415,22 @@ class EvolutionTester(PopulationBaseManager):
         final_stats: Dict
     ) -> str:
         """Genera un report dettagliato del test."""
+        risk_config = self.config.get_value('portfolio.risk_management', {})
+        
         lines = [
             f"\n=== Report Test Evoluzione ===\n",
             f"Popolazione: {population.name}",
             f"Generazioni: {len(evolution_stats)}",
             f"Dimensione: {population.max_size}",
+            
+            "\nConfigurazione Risk Management:",
+            "+-----------------+--------+",
+            "| Parametro       | Valore |",
+            "+-----------------+--------+",
+            f"| Take Profit    | {risk_config.get('take_profit_pct', 0.04)*100:6.1f}% |",
+            f"| Stop Loss      | {risk_config.get('stop_loss_pct', 0.02)*100:6.1f}% |",
+            f"| Capitale       | {risk_config.get('initial_capital', 1000):6.0f}$ |",
+            "+-----------------+--------+",
             
             "\nStatistiche Iniziali:",
             f"- Fitness Medio: {initial_stats['avg_fitness']:.2f}",

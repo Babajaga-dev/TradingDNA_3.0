@@ -8,6 +8,7 @@ __pycache__/
 data/gene_tests/
 test_reports/
 logs/
+log.txt
 ##############################################
 
 

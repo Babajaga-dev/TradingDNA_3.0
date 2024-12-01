@@ -26,6 +26,16 @@ MAX_RETRIES = 5
 RETRY_DELAY = 2.0
 MAX_BACKOFF = 10.0
 
+# Tipi di gene validi
+VALID_GENE_TYPES = {
+    'rsi',
+    'macd',
+    'moving_average',
+    'bollinger',
+    'stochastic',
+    'atr'
+}
+
 def retry_on_db_lock(func):
     """Decorator per gestire i database lock con retry e backoff esponenziale."""
     def wrapper(*args, **kwargs):
@@ -178,9 +188,9 @@ class MutationManager(PopulationBaseManager):
             chromosome: Cromosoma da modificare
             session: Sessione database attiva
         """
-        # Lista geni disponibili
-        available_genes = set(self.config['gene'].keys()) - \
-                         set(g.gene_type for g in chromosome.genes)
+        # Lista geni disponibili usando solo i tipi validi
+        current_gene_types = set(g.gene_type for g in chromosome.genes)
+        available_genes = VALID_GENE_TYPES - current_gene_types
         
         if available_genes:
             gene_type = random.choice(list(available_genes))

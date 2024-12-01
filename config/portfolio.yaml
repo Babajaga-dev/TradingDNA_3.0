@@ -8,3 +8,12 @@ portfolio:
   - 1h
   - 4h
   - 1d
+  risk_management:
+    signal_threshold: 0.2  # Modificato da 0.3 a 0.2 come era in cromo.yaml
+    stop_loss_pct: 0.02
+    take_profit_pct: 0.04
+    max_position_size: 0.1
+    trailing_stop_pct: 0.01
+    initial_capital: 1000.0
+    commission: 0.001    # Aggiunto da cromo.yaml
+    slippage: 0.001     # Aggiunto da cromo.yaml

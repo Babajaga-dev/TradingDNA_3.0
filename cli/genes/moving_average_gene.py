@@ -11,14 +11,15 @@ from .base import Gene
 class MovingAverageGene(Gene):
     """Gene che implementa l'indicatore Moving Average."""
     
-    def __init__(self, params: Optional[Dict[str, Any]] = None):
+    def __init__(self, name: str = 'moving_average', params: Optional[Dict[str, Any]] = None):
         """
         Inizializza il gene Moving Average.
         
         Args:
+            name: Nome del gene (default: 'moving_average')
             params: Parametri specifici del gene (opzionale)
         """
-        super().__init__('moving_average', params)
+        super().__init__(name, params)
         
     def calculate_ma(self, data: np.ndarray) -> np.ndarray:
         """
@@ -61,11 +62,11 @@ class MovingAverageGene(Gene):
                     
                 return result
             else:
-                #print(f"[DEBUG] Tipo MA non valido: {ma_type}")
+                self.logger.error(f"Tipo MA non valido: {ma_type}")
                 return np.full_like(data, np.nan)
                 
         except Exception as e:
-            #print(f"[DEBUG] Errore nel calcolo MA: {str(e)}")
+            self.logger.error(f"Errore calcolo MA: {str(e)}")
             return np.full_like(data, np.nan)
             
     def calculate_signal(self, data: np.ndarray) -> float:
@@ -81,7 +82,7 @@ class MovingAverageGene(Gene):
         try:
             # Verifica parametri necessari
             if 'period' not in self.params or 'type' not in self.params or 'distance' not in self.params:
-                print("[DEBUG] Parametri mancanti per MovingAverageGene")
+                self.logger.error(f"Parametri mancanti: {self.params}")
                 return 0.0
                 
             period = int(float(self.params['period']))
@@ -107,12 +108,12 @@ class MovingAverageGene(Gene):
             distance_threshold = float(self.params['distance'])
             signal = distance_percent / distance_threshold
             
-            #print(f"[DEBUG] MA Signal: price={last_price:.2f}, ma={last_ma:.2f}, dist={distance_percent:.4f}, signal={signal:.4f}")
+            self.logger.debug(f"Segnale MA: price={last_price:.2f}, ma={last_ma:.2f}, signal={signal:.2f}")
             
             return float(np.clip(signal, -1.0, 1.0))
             
         except Exception as e:
-            #print(f"[DEBUG] Errore nel calcolo del segnale MA: {str(e)}")
+            self.logger.error(f"Errore calcolo segnale MA: {str(e)}")
             return 0.0
         
     def evaluate(self, data: np.ndarray) -> float:
@@ -163,5 +164,5 @@ class MovingAverageGene(Gene):
             return float(fitness)
             
         except Exception as e:
-            #print(f"[DEBUG] Errore nella valutazione MA: {str(e)}")
+            self.logger.error(f"Errore valutazione MA: {str(e)}")
             return 0.0

@@ -22,6 +22,9 @@ from cli.logger.log_manager import get_logger
 # Setup logger
 logger = get_logger('test_population_creator')
 
+# Tipi di gene validi (escluso 'base' che è una classe astratta)
+VALID_GENE_TYPES = {'rsi', 'macd', 'moving_average', 'bollinger', 'stochastic', 'atr'}
+
 class TestPopulationCreator(PopulationBaseManager):
     """Crea popolazioni per il testing."""
     
@@ -29,15 +32,12 @@ class TestPopulationCreator(PopulationBaseManager):
         """Inizializza il creator."""
         super().__init__()
         self.test_config = self._load_test_config()
-        print("[DEBUG] TestPopulationCreator inizializzato")
         
     def _load_test_config(self) -> Dict:
         """Carica la configurazione dei test."""
         try:
-            print("[DEBUG] Caricamento configurazione test")
-            with open('config/test.yaml', 'r') as f:
+            with open('config/cromo.yaml', 'r') as f:
                 config = yaml.safe_load(f)
-            print("[DEBUG] Configurazione test caricata con successo")
             return config['evolution_test']
         except Exception as e:
             logger.error(f"Errore caricamento configurazione test: {str(e)}")
@@ -46,7 +46,6 @@ class TestPopulationCreator(PopulationBaseManager):
     def create_test_population(self, name: Optional[str] = None, session: Optional[Session] = None) -> Population:
         """Crea una popolazione per il testing."""
         try:
-            print("[DEBUG] Avvio creazione popolazione test")
             if session is None:
                 with self.session_scope() as session:
                     return self._create_test_population_internal(name, session)
@@ -74,7 +73,6 @@ class TestPopulationCreator(PopulationBaseManager):
             
             symbol_data = symbol_result.fetchone()
             if not symbol_data:
-                print("[DEBUG] ERRORE: Symbol BTCUSDT non trovato!")
                 raise ValueError("Symbol BTCUSDT non trovato")
             
             symbol_id = symbol_data[0]
@@ -163,7 +161,8 @@ class TestPopulationCreator(PopulationBaseManager):
             
             for chromosome_id in chromosome_ids:
                 for gene_type, config in gene_config.items():
-                    if gene_type != 'base':
+                    # Salta il gene 'base' e verifica che il tipo sia valido
+                    if gene_type in VALID_GENE_TYPES:
                         # Ottieni il risk_factor specifico del gene o usa quello base
                         risk_factor = config['default'].get('risk_factor', base_risk_factor)
                         # Rimuovi risk_factor dai parametri poiché è una colonna separata
@@ -174,7 +173,7 @@ class TestPopulationCreator(PopulationBaseManager):
                         genes_values.append(
                             f"({chromosome_id}, '{gene_type}', "
                             f"'{json.dumps(params)}', 0.5, true, "
-                            f"{risk_factor}, "  # Aggiunto risk_factor
+                            f"{risk_factor}, "
                             f"'{json.dumps({})}', '{json.dumps(config['constraints'])}')"
                         )
             
