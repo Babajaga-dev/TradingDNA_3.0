@@ -46,10 +46,40 @@ class VolumeGene(Gene):
         
         # Calcola volume ratio (volume corrente / media mobile)
         volume_ratio = np.zeros_like(volumes)
-        mask = volume_ma_padded != 0
+        mask = (volume_ma_padded != 0) & ~np.isnan(volume_ma_padded)
         volume_ratio[mask] = volumes[mask] / volume_ma_padded[mask]
         
         return volume_ma_padded, volume_ratio
+        
+    def calculate_trend(self, data: np.ndarray, window: int = 10) -> float:
+        """
+        Calcola il trend dei dati usando variazioni percentuali.
+        
+        Args:
+            data: Array numpy con i dati
+            window: Finestra temporale per il calcolo
+            
+        Returns:
+            Trend normalizzato tra -1 e 1
+        """
+        if len(data) < window:
+            return 0
+            
+        recent_data = data[-window:]
+        if recent_data[0] == 0:
+            return 0
+            
+        # Calcola variazione percentuale totale
+        total_change = (recent_data[-1] - recent_data[0]) / recent_data[0]
+        
+        # Calcola variazioni giornaliere
+        daily_changes = np.diff(recent_data) / recent_data[:-1]
+        
+        # Combina trend totale con consistenza delle variazioni giornaliere
+        consistency = np.mean(np.sign(daily_changes) == np.sign(total_change))
+        trend_strength = total_change * (1 + consistency)
+        
+        return np.clip(trend_strength, -1, 1)
         
     def calculate_signal(self, data: np.ndarray) -> float:
         """
@@ -61,39 +91,78 @@ class VolumeGene(Gene):
         Returns:
             Segnale normalizzato tra -1 e 1
         """
-        if len(data) < int(float(self.params['period'])):
+        period = int(float(self.params['period']))
+        if len(data) < period:
             return 0
             
-        volumes = data[:, 4]  # Volume
-        prices = data[:, 3]   # Close price
+        volumes = data[:, 1]  # Volume (colonna 1)
+        prices = data[:, 0]   # Price (colonna 0)
         
+        # Verifica dati validi
+        if np.all(volumes == 0) or np.all(prices == 0) or np.any(np.isnan(volumes)) or np.any(np.isnan(prices)):
+            return 0
+            
         # Calcola metriche volume
         volume_ma, volume_ratio = self.calculate_volume_metrics(volumes)
         
-        if np.isnan(volume_ratio[-1]):
+        if len(volume_ratio) < period or np.isnan(volume_ratio[-1]):
             return 0
             
-        # Calcola variazione prezzo
-        price_change = (prices[-1] - prices[-2]) / prices[-2]
+        # Calcola trend del volume e prezzo
+        volume_trend = self.calculate_trend(volumes)
+        price_trend = self.calculate_trend(prices)
         
+        # Calcola variazione prezzo recente
+        if len(prices) >= 2 and prices[-2] != 0:
+            price_change = (prices[-1] - prices[-2]) / prices[-2]
+        else:
+            price_change = 0
+            
         # Threshold per il volume ratio
         threshold = float(self.params['threshold'])
+        min_price_change = float(self.params['min_price_change'])
         
-        # Calcola segnale base dal volume ratio
-        if volume_ratio[-1] > threshold:
-            base_signal = 1.0  # Volume sopra la media
-        elif volume_ratio[-1] < 1/threshold:
-            base_signal = -1.0  # Volume sotto la media
-        else:
-            base_signal = 0.0  # Volume nella norma
+        # Calcola segnale base dal trend del volume
+        base_signal = volume_trend
+        
+        # Rafforza il segnale basato sul volume ratio
+        if volume_ratio[-1] > threshold * 2:  # Volume molto alto
+            base_signal = max(base_signal, 0.7)
+        elif volume_ratio[-1] > threshold:  # Volume alto
+            base_signal = max(base_signal, 0.5)
+        elif volume_ratio[-1] < 1/(threshold * 2):  # Volume molto basso
+            base_signal = min(base_signal, -0.7)
+        elif volume_ratio[-1] < 1/threshold:  # Volume basso
+            base_signal = min(base_signal, -0.5)
             
-        # Modifica il segnale basandosi sulla direzione del prezzo
-        if abs(price_change) > float(self.params['min_price_change']):
-            signal = base_signal * np.sign(price_change)
-        else:
-            signal = 0.0
+        # Analisi della divergenza prezzo-volume
+        if abs(price_trend) > 0.1:  # Trend significativo del prezzo
+            if np.sign(price_trend) != np.sign(base_signal):
+                # Divergenza: inverti il segnale
+                base_signal = -abs(base_signal) * 1.2
+            else:
+                # Conferma: rafforza il segnale
+                base_signal *= 1.5
+                # Se entrambi i trend sono forti, rafforza ulteriormente
+                if abs(price_trend) > 0.15 and abs(volume_trend) > 0.15:
+                    base_signal *= 1.3
+                
+        # Gestione breakout
+        if volume_ratio[-1] > threshold * 2 and abs(price_change) > min_price_change * 2:
+            # Breakout confermato da volume e prezzo
+            breakout_signal = np.sign(price_change) * 0.8
+            if np.sign(volume_trend) == np.sign(price_change):
+                breakout_signal = np.sign(price_change) * 0.9  # Rafforza ulteriormente
+            base_signal = breakout_signal
             
-        return np.clip(signal, -1, 1)
+        # Assicura che il segnale sia abbastanza forte per i trend chiari
+        if abs(volume_trend) > 0.3:
+            base_signal = np.sign(base_signal) * max(abs(base_signal), 0.6)
+            
+        # Amplifica il segnale finale
+        final_signal = base_signal * 1.5
+            
+        return np.clip(final_signal, -1, 1)
         
     def evaluate(self, data: np.ndarray) -> float:
         """
@@ -108,8 +177,8 @@ class VolumeGene(Gene):
         if len(data) < int(float(self.params['period'])):
             return 0
             
-        volumes = data[:, 4]  # Volume
-        prices = data[:, 3]   # Close price
+        volumes = data[:, 1]  # Volume (colonna 1)
+        prices = data[:, 0]   # Price (colonna 0)
         
         # Calcola metriche volume
         volume_ma, volume_ratio = self.calculate_volume_metrics(volumes)

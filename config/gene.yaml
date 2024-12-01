@@ -156,3 +156,27 @@ gene:
       risk_factor:
         min: 0.1
         max: 1.0
+
+  volume:
+    default:
+      period: 20
+      threshold: 2.0
+      min_price_change: 0.005
+      weight: 1.0
+      risk_factor: 0.6
+    constraints:
+      period:
+        min: 5
+        max: 50
+      threshold:
+        min: 1.1
+        max: 5.0
+      min_price_change:
+        min: 0.001
+        max: 0.05
+      weight:
+        min: 0.1
+        max: 5.0
+      risk_factor:
+        min: 0.1
+        max: 1.0

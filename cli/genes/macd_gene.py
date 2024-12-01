@@ -38,18 +38,23 @@ class MACDGene(Gene):
             
             self.logger.debug(f"Calcolo MACD con parametri: fast={fast_period}, slow={slow_period}, signal={signal_period}")
             
-            if len(data) < max(fast_period, slow_period, signal_period):
-                self.logger.warning("Serie temporale troppo corta per il calcolo del MACD")
+            # Verifica che ci siano abbastanza dati
+            min_periods = max(fast_period, slow_period) + signal_period
+            if len(data) < min_periods:
+                self.logger.warning(f"Serie temporale troppo corta per il calcolo del MACD (richiesti {min_periods} punti, disponibili {len(data)})")
                 return np.full_like(data, np.nan), np.full_like(data, np.nan), np.full_like(data, np.nan)
                 
             # Calcola EMA veloce e lenta
             alpha_fast = 2 / (fast_period + 1)
             alpha_slow = 2 / (slow_period + 1)
             
-            ema_fast = np.full_like(data, np.nan)
-            ema_slow = np.full_like(data, np.nan)
+            ema_fast = np.zeros_like(data)
+            ema_slow = np.zeros_like(data)
             
             # Inizializza le prime medie come SMA
+            ema_fast[:fast_period] = np.nan
+            ema_slow[:slow_period] = np.nan
+            
             ema_fast[fast_period-1] = np.mean(data[:fast_period])
             ema_slow[slow_period-1] = np.mean(data[:slow_period])
             
@@ -68,16 +73,21 @@ class MACDGene(Gene):
             signal_line = np.full_like(data, np.nan)
             alpha_signal = 2 / (signal_period + 1)
             
-            # Inizializza signal line
-            valid_macd = macd_line[~np.isnan(macd_line)]
-            if len(valid_macd) >= signal_period:
-                start_idx = np.where(~np.isnan(macd_line))[0][0]
-                signal_line[start_idx+signal_period-1] = np.mean(macd_line[start_idx:start_idx+signal_period])
+            # Trova il primo indice valido del MACD
+            valid_indices = np.where(~np.isnan(macd_line))[0]
+            if len(valid_indices) >= signal_period:
+                start_idx = valid_indices[0]
+                end_idx = start_idx + signal_period
                 
-                # Calcola il resto della signal line
-                for i in range(start_idx+signal_period, len(data)):
-                    signal_line[i] = macd_line[i] * alpha_signal + signal_line[i-1] * (1 - alpha_signal)
+                # Verifica che ci siano abbastanza dati validi
+                if end_idx <= len(macd_line):
+                    # Inizializza signal line
+                    signal_line[end_idx-1] = np.mean(macd_line[start_idx:end_idx])
                     
+                    # Calcola il resto della signal line
+                    for i in range(end_idx, len(data)):
+                        signal_line[i] = macd_line[i] * alpha_signal + signal_line[i-1] * (1 - alpha_signal)
+            
             # Calcola l'istogramma
             histogram = macd_line - signal_line
             
@@ -99,24 +109,39 @@ class MACDGene(Gene):
             Segnale normalizzato tra -1 e 1
         """
         try:
-            self.logger.debug("Calcolo segnale MACD")
-            if len(data) < max(int(float(self.params['fast_period'])), 
-                             int(float(self.params['slow_period'])), 
-                             int(float(self.params['signal_period']))):
-                self.logger.warning("Serie temporale troppo corta per il calcolo del segnale MACD")
+            if len(data) == 0 or np.all(data == 0) or np.all(np.isnan(data)):
+                return 0.0
+                
+            min_periods = max(int(float(self.params['fast_period'])),
+                            int(float(self.params['slow_period'])),
+                            int(float(self.params['signal_period'])))
+                            
+            if len(data) < min_periods:
                 return 0.0
                 
             macd_line, signal_line, histogram = self.calculate_macd(data)
             
-            if np.isnan(histogram[-1]):
-                self.logger.warning("Impossibile calcolare il segnale MACD: valori NaN")
+            # Verifica che ci siano dati validi alla fine della serie
+            if np.isnan(histogram[-1]) or np.isnan(macd_line[-1]) or np.isnan(signal_line[-1]):
                 return 0.0
-                
-            # Normalizza il segnale basandosi sulla divergenza media
-            avg_divergence = np.nanstd(histogram) * 2  # Usa 2 deviazioni standard come divergenza di default
-            signal = histogram[-1] / avg_divergence
             
-            self.logger.debug(f"Segnale MACD calcolato: {signal}")
+            # Calcola il trend dei prezzi
+            window = min(20, len(data))
+            price_change = (data[-1] - data[-window]) / data[-window]
+            
+            # Calcola il trend del MACD
+            macd_change = macd_line[-1] - macd_line[-window]
+            
+            # Se il MACD e i prezzi si muovono nella stessa direzione, il trend è confermato
+            if np.sign(price_change) == np.sign(macd_change):
+                trend_strength = price_change
+            else:
+                # Se c'è divergenza, inverti il segnale
+                trend_strength = -price_change * 0.5  # Ridotto per essere più conservativi
+            
+            # Normalizza il segnale
+            signal = np.tanh(trend_strength * 5)  # Fattore 5 per rendere il segnale più deciso
+            
             return float(np.clip(signal, -1, 1))
             
         except Exception as e:
@@ -134,36 +159,60 @@ class MACDGene(Gene):
             Punteggio di fitness del gene
         """
         try:
-            self.logger.debug("Inizio valutazione MACD")
-            if len(data) < max(int(float(self.params['fast_period'])), 
-                             int(float(self.params['slow_period'])), 
-                             int(float(self.params['signal_period']))):
-                self.logger.warning("Serie temporale troppo corta per la valutazione MACD")
+            if len(data) == 0:
+                self.logger.warning("Array di dati vuoto")
+                return 0.0
+                
+            min_periods = max(int(float(self.params['fast_period'])),
+                            int(float(self.params['slow_period'])),
+                            int(float(self.params['signal_period'])))
+                            
+            if len(data) < min_periods:
+                self.logger.warning(f"Serie temporale troppo corta: {len(data)} < {min_periods}")
                 return 0.0
                 
             macd_line, signal_line, histogram = self.calculate_macd(data)
-            signals = np.zeros_like(data)
+            
+            # Rimuovi i NaN dall'inizio della serie
+            valid_idx = np.where(~np.isnan(histogram))[0]
+            if len(valid_idx) == 0:
+                return 0.0
+                
+            start_idx = valid_idx[0]
+            
+            # Usa solo i dati validi per i segnali
+            valid_histogram = histogram[start_idx:]
+            valid_data = data[start_idx:]
+            
+            if len(valid_histogram) < 2:
+                return 0.0
+                
+            signals = np.zeros_like(valid_histogram)
             
             # Genera segnali quando l'istogramma attraversa lo zero
-            histogram_crossover = np.diff(np.signbit(histogram))
-            signals[1:][histogram_crossover] = 1  # Segnali di acquisto
-            signals[1:][~histogram_crossover] = -1  # Segnali di vendita
+            crossovers = np.diff(np.signbit(valid_histogram))
+            signals[1:][crossovers] = 1
+            signals[1:][~crossovers] = -1
             
             # Calcola i rendimenti
-            returns = np.diff(data) / data[:-1]
+            returns = np.diff(valid_data) / valid_data[:-1]
             signal_returns = signals[:-1] * returns
             
-            # Metriche di valutazione
-            win_rate = np.sum(signal_returns > 0) / np.sum(signals != 0) if np.sum(signals != 0) > 0 else 0
-            avg_return = np.mean(signal_returns[signals[:-1] != 0]) if np.sum(signals[:-1] != 0) > 0 else 0
+            # Calcola metriche solo su segnali validi
+            valid_signals = signals != 0
+            if np.sum(valid_signals) == 0:
+                return 0.0
+                
+            win_rate = np.sum(signal_returns > 0) / np.sum(valid_signals[:-1])
+            avg_return = np.mean(signal_returns[valid_signals[:-1]])
             
             # Penalizza troppi segnali
-            signal_frequency = np.sum(signals != 0) / len(signals)
-            frequency_penalty = np.exp(-signal_frequency * 10)  # Penalizza alta frequenza
+            signal_frequency = np.sum(valid_signals) / len(signals)
+            frequency_penalty = np.exp(-signal_frequency * 10)
             
             # Calcola trend following score
             trend_changes = np.sum(np.diff(signals) != 0)
-            trend_score = np.exp(-trend_changes / len(signals) * 5)  # Premia meno cambi di trend
+            trend_score = np.exp(-trend_changes / len(signals) * 5)
             
             fitness = (win_rate * 0.3 + avg_return * 0.3 + frequency_penalty * 0.2 + trend_score * 0.2)
             self.logger.debug(f"Valutazione MACD completata. Fitness: {fitness}")

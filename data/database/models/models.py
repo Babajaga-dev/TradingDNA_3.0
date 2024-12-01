@@ -14,8 +14,7 @@ from sqlalchemy import (
     ForeignKey, JSON, Text, Enum, UniqueConstraint, Index,
     text, inspect
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 
 from data.database.session_manager import DBSessionManager

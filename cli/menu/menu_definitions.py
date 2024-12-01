@@ -159,6 +159,156 @@ bollinger_menu_items = [
     )
 ]
 
+# Menu items per i geni ATR
+atr_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('atr'),
+        description="Testa il gene ATR su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('atr'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('atr'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('atr'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni Candlestick
+candlestick_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('candlestick'),
+        description="Testa il gene Candlestick su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('candlestick'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('candlestick'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('candlestick'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni OBV
+obv_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('obv'),
+        description="Testa il gene OBV su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('obv'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('obv'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('obv'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni Stochastic
+stochastic_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('stochastic'),
+        description="Testa il gene Stochastic su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('stochastic'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('stochastic'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('stochastic'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni Volatility Breakout
+volatility_breakout_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('volatility_breakout'),
+        description="Testa il gene Volatility Breakout su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('volatility_breakout'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('volatility_breakout'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('volatility_breakout'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
+# Menu items per i geni Volume
+volume_menu_items = [
+    create_command(
+        name="Test Gene",
+        callback=lambda: gene_manager.test_gene('volume'),
+        description="Testa il gene Volume su dati storici"
+    ),
+    create_command(
+        name="Visualizza Parametri",
+        callback=lambda: gene_manager.view_gene_params('volume'),
+        description="Visualizza i parametri correnti del gene"
+    ),
+    create_command(
+        name="Modifica Parametri",
+        callback=lambda: gene_manager.set_gene_params('volume'),
+        description="Modifica i parametri del gene"
+    ),
+    create_command(
+        name="Reset Parametri",
+        callback=lambda: gene_manager.reset_gene_params('volume'),
+        description="Resetta i parametri ai valori di default",
+        confirm=True
+    )
+]
+
 # Menu completo dei geni
 gene_menu_items = [
     create_submenu(
@@ -180,6 +330,36 @@ gene_menu_items = [
         name="Bollinger",
         items=bollinger_menu_items,
         description="Gestione gene Bollinger"
+    ),
+    create_submenu(
+        name="ATR",
+        items=atr_menu_items,
+        description="Gestione gene ATR"
+    ),
+    create_submenu(
+        name="Candlestick",
+        items=candlestick_menu_items,
+        description="Gestione gene Candlestick"
+    ),
+    create_submenu(
+        name="OBV",
+        items=obv_menu_items,
+        description="Gestione gene OBV"
+    ),
+    create_submenu(
+        name="Stochastic",
+        items=stochastic_menu_items,
+        description="Gestione gene Stochastic"
+    ),
+    create_submenu(
+        name="Volatility Breakout",
+        items=volatility_breakout_menu_items,
+        description="Gestione gene Volatility Breakout"
+    ),
+    create_submenu(
+        name="Volume",
+        items=volume_menu_items,
+        description="Gestione gene Volume"
     )
 ]
 
